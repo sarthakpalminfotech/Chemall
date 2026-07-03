@@ -8,26 +8,16 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ============================================================
--- 1. CONTAINER TYPES (global master list)
--- ============================================================
-CREATE TABLE IF NOT EXISTS container_types (
-  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name        TEXT NOT NULL,
-  capacity    NUMERIC NOT NULL DEFAULT 0.00,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- Case-insensitive unique name
-CREATE UNIQUE INDEX IF NOT EXISTS container_types_name_unique_idx ON container_types (LOWER(name));
-
--- ============================================================
 -- 2. PRODUCTS
 -- ============================================================
 CREATE TABLE IF NOT EXISTS products (
   id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name        TEXT NOT NULL,
-  type        TEXT NOT NULL CHECK (type IN ('finished_good', 'raw_material')),
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  name            TEXT NOT NULL,
+  type            TEXT NOT NULL CHECK (type IN ('finished_good', 'raw_material')),
+  alert_threshold NUMERIC(10,2) NOT NULL DEFAULT 100.00,
+  is_container    BOOLEAN NOT NULL DEFAULT FALSE,
+  capacity        NUMERIC(10,2),
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Case-insensitive unique name
@@ -36,7 +26,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS products_name_unique_idx ON products (LOWER(na
 -- Many-to-many: which container types belong to a finished good
 CREATE TABLE IF NOT EXISTS product_container_types (
   product_id        UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-  container_type_id UUID NOT NULL REFERENCES container_types(id) ON DELETE CASCADE,
+  container_type_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   PRIMARY KEY (product_id, container_type_id)
 );
 
@@ -120,7 +110,7 @@ CREATE TABLE IF NOT EXISTS order_products (
 -- Preferred containers selected at order creation time
 CREATE TABLE IF NOT EXISTS order_preferred_containers (
   order_id          UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-  container_type_id UUID NOT NULL REFERENCES container_types(id),
+  container_type_id UUID NOT NULL REFERENCES products(id),
   PRIMARY KEY (order_id, container_type_id)
 );
 
@@ -128,7 +118,7 @@ CREATE TABLE IF NOT EXISTS order_preferred_containers (
 CREATE TABLE IF NOT EXISTS order_dispatch_containers (
   order_id          UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
   product_id        UUID NOT NULL REFERENCES products(id),
-  container_type_id UUID NOT NULL REFERENCES container_types(id),
+  container_type_id UUID NOT NULL REFERENCES products(id),
   quantity          INTEGER NOT NULL DEFAULT 1 CHECK (quantity >= 0),
   PRIMARY KEY (order_id, product_id, container_type_id)
 );
