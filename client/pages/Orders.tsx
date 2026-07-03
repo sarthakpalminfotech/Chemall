@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useStore } from "@/lib/store";
 import { Order, ContainerType } from "@/lib/types";
 import {
@@ -40,6 +40,10 @@ import {
   Factory,
   X,
   SlidersHorizontal,
+  Edit2,
+  Flag,
+  Truck,
+  Eye,
 } from "lucide-react";
 import { formatDate } from "date-fns";
 import { QRCodeSVG, QRCodeCanvas } from "qrcode.react";
@@ -48,6 +52,14 @@ import { cn } from "@/lib/utils";
 
 // ─── Status + Priority Badges ──────────────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
+  if (status === "dispatched") {
+    return (
+      <span className="badge bg-slate-100 text-slate-700 border-slate-200 shadow-sm border px-2 py-0.5 rounded-md flex items-center gap-1.5 text-xs font-semibold">
+        <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+        Dispatched
+      </span>
+    );
+  }
   if (status === "in_production") {
     return (
       <span className="badge badge-in-production">
@@ -73,7 +85,8 @@ function PriorityBadge({ priority }: { priority: number }) {
 }
 
 export default function Orders() {
-  const { orders, products, markInProduction, assignPriority, isOwnerAdmin } = useStore();
+  const navigate = useNavigate();
+  const { orders, products, markInProduction, assignPriority, markAsDispatched, isOwnerAdmin } = useStore();
   const { toast } = useToast();
   const qrRef = useRef<HTMLCanvasElement>(null);
 
@@ -84,6 +97,10 @@ export default function Orders() {
     dateFrom: "",
     dateTo: "",
     products: [] as string[],
+    priorityOnly: false,
+    recurringOnly: false,
+    minQty: "",
+    maxQty: "",
   });
 
   // Mark in Production
@@ -125,14 +142,36 @@ export default function Orders() {
       to.setHours(23, 59, 59, 999);
       result = result.filter((o) => new Date(o.date) <= to);
     }
+    if (filters.priorityOnly) {
+      result = result.filter((o) => o.priority !== undefined && o.priority !== null);
+    }
+    if (filters.recurringOnly) {
+      result = result.filter((o) => o.repeatOrder?.enabled);
+    }
+    if (filters.minQty || filters.maxQty) {
+      const min = filters.minQty ? parseFloat(filters.minQty) : 0;
+      const max = filters.maxQty ? parseFloat(filters.maxQty) : Infinity;
+      result = result.filter((o) => {
+        const totalQty = o.products.reduce((acc, p) => acc + p.quantity, 0);
+        return totalQty >= min && totalQty <= max;
+      });
+    }
 
     // Sort logic:
-    // 1. Status: in_production goes to the bottom
+    // 1. Status: dispatched goes to very bottom, then in_production, then pending
     // 2. Priority: Items with priority (1-10) come first
     // 3. Date: Latest created orders appear first
     result.sort((a, b) => {
-      if (a.status === "in_production" && b.status !== "in_production") return 1;
-      if (a.status !== "in_production" && b.status === "in_production") return -1;
+      const getStatusRank = (s: string) => {
+        if (s === "dispatched") return 3;
+        if (s === "in_production") return 2;
+        return 1; // pending
+      };
+      
+      const aRank = getStatusRank(a.status);
+      const bRank = getStatusRank(b.status);
+      
+      if (aRank !== bRank) return aRank - bRank;
       
       const aPriority = a.priority ?? 999;
       const bPriority = b.priority ?? 999;
@@ -332,6 +371,8 @@ export default function Orders() {
     win.print();
   };
 
+
+
   const openPriorityModal = (orderId: string) => {
     setSelectedOrderId(orderId);
     const order = orders.find((o) => o.id === orderId);
@@ -355,6 +396,10 @@ export default function Orders() {
     filters.status !== "all",
     !!filters.dateFrom,
     !!filters.dateTo,
+    filters.priorityOnly,
+    filters.recurringOnly,
+    !!filters.minQty,
+    !!filters.maxQty,
   ].filter(Boolean).length;
 
   return (
@@ -368,12 +413,14 @@ export default function Orders() {
               {filteredOrders.length} order{filteredOrders.length !== 1 ? "s" : ""} found
             </p>
           </div>
-          <Link to="/orders/new">
-            <Button className="gap-2 shadow-sm">
-              <Plus className="w-4 h-4" />
-              Add Order
-            </Button>
-          </Link>
+          <div className="flex gap-2">
+            <Link to="/orders/new">
+              <Button className="gap-2 shadow-sm">
+                <Plus className="w-4 h-4" />
+                Add Order
+              </Button>
+            </Link>
+          </div>
         </div>
       </div>
 
@@ -406,11 +453,11 @@ export default function Orders() {
         </div>
 
         {/* Active filter chips */}
-        {(filters.status !== "all" || filters.dateFrom || filters.dateTo) && (
+        {activeFiltersCount > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {filters.status !== "all" && (
               <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-primary/10 text-primary rounded-full text-xs font-medium border border-primary/20">
-                Status: {filters.status === "in_production" ? "In Production" : "Pending"}
+                Status: {filters.status === "in_production" ? "In Production" : filters.status === "dispatched" ? "Dispatched" : "Pending"}
                 <button onClick={() => setFilters({ ...filters, status: "all" })} className="ml-0.5 hover:opacity-60">
                   <X className="w-3 h-3" />
                 </button>
@@ -432,6 +479,30 @@ export default function Orders() {
                 </button>
               </span>
             )}
+            {filters.priorityOnly && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-primary/10 text-primary rounded-full text-xs font-medium border border-primary/20">
+                Priority Only
+                <button onClick={() => setFilters({ ...filters, priorityOnly: false })} className="ml-0.5 hover:opacity-60">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            {filters.recurringOnly && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-primary/10 text-primary rounded-full text-xs font-medium border border-primary/20">
+                Recurring Only
+                <button onClick={() => setFilters({ ...filters, recurringOnly: false })} className="ml-0.5 hover:opacity-60">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            {(filters.minQty || filters.maxQty) && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-primary/10 text-primary rounded-full text-xs font-medium border border-primary/20">
+                Qty: {filters.minQty || "0"} - {filters.maxQty || "Max"}
+                <button onClick={() => setFilters({ ...filters, minQty: "", maxQty: "" })} className="ml-0.5 hover:opacity-60">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -449,7 +520,15 @@ export default function Orders() {
         ) : (
           <div className="space-y-2.5">
             {filteredOrders.map((order) => (
-              <div key={order.id} className="list-row">
+              <div 
+                key={order.id} 
+                className="list-row cursor-pointer transition-colors hover:bg-secondary/40 relative"
+                onClick={(e) => {
+                  if ((e.target as HTMLElement).closest('.prevent-click')) return;
+                  if (!e.currentTarget.contains(e.target as Node)) return;
+                  navigate(`/orders/${order.id}`);
+                }}
+              >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     {/* Badges row */}
@@ -486,48 +565,70 @@ export default function Orders() {
                     </div>
                   </div>
 
-                  {/* 3-dot menu */}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button className="p-2 hover:bg-secondary rounded-lg transition-colors flex-shrink-0">
-                        <MoreVertical className="w-4 h-4 text-muted-foreground" />
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {order.status === "pending" && (
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openProductionModal(order);
+                        }}
+                        className="p-1.5 text-success hover:bg-success/10 rounded-md transition-colors prevent-click"
+                        title="Mark in Production"
+                      >
+                        <Factory className="w-4 h-4" />
                       </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-52">
-                      <DropdownMenuItem asChild>
-                        <Link to={`/orders/${order.id}`} className="cursor-pointer">
-                          View Details
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem className="cursor-pointer">Edit</DropdownMenuItem>
-                      {order.status === "pending" && (
-                        <>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            className="cursor-pointer text-success focus:text-success"
-                            onClick={() => openProductionModal(order)}
-                          >
-                            <Factory className="w-4 h-4 mr-2" />
-                            Mark in Production
+                    )}
+                    {order.status === "in_production" && (
+                      <button 
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          try {
+                            await markAsDispatched(order.id);
+                            toast({ title: "Order marked as dispatched" });
+                          } catch (err: any) {
+                            toast({ title: "Error", description: err.message, variant: "destructive" });
+                          }
+                        }}
+                        className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors prevent-click"
+                        title="Mark as Dispatched"
+                      >
+                        <Truck className="w-4 h-4" />
+                      </button>
+                    )}
+
+                    {/* 3-dot menu */}
+                    <div onClick={(e) => e.stopPropagation()} className="prevent-click ml-1">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button className="p-1.5 hover:bg-secondary rounded-md transition-colors">
+                            <MoreVertical className="w-4 h-4 text-muted-foreground" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-48">
+                          <DropdownMenuItem className="cursor-pointer gap-2" asChild>
+                            <Link to={`/orders/${order.id}`}>
+                              <Eye className="w-4 h-4" /> View Details
+                            </Link>
                           </DropdownMenuItem>
-                        </>
-                      )}
-                      {isOwnerAdmin() && (
-                        <>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            className="cursor-pointer"
-                            onClick={() => openPriorityModal(order.id)}
-                          >
-                            Assign Priority
-                            <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-warning/10 text-warning rounded font-medium">
-                              Admin
-                            </span>
+                          <DropdownMenuItem className="cursor-pointer gap-2">
+                            <Edit2 className="w-4 h-4" /> Edit
                           </DropdownMenuItem>
-                        </>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                          {isOwnerAdmin() && order.status === "pending" && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="cursor-pointer gap-2"
+                                onClick={() => openPriorityModal(order.id)}
+                              >
+                                <Flag className={cn("w-4 h-4", order.priority ? "text-primary" : "")} />
+                                Assign Priority
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </div>
                 </div>
               </div>
             ))}
@@ -552,6 +653,7 @@ export default function Orders() {
                   <SelectItem value="all">All Statuses</SelectItem>
                   <SelectItem value="pending">Pending</SelectItem>
                   <SelectItem value="in_production">In Production</SelectItem>
+                  <SelectItem value="dispatched">Dispatched</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -568,8 +670,25 @@ export default function Orders() {
                 </div>
               </div>
             </div>
+            <div>
+              <Label className="field-label">Quantity Range (kg)</Label>
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                <Input type="number" placeholder="Min Qty" value={filters.minQty} onChange={(e) => setFilters({ ...filters, minQty: e.target.value })} />
+                <Input type="number" placeholder="Max Qty" value={filters.maxQty} onChange={(e) => setFilters({ ...filters, maxQty: e.target.value })} />
+              </div>
+            </div>
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center gap-2">
+                <Checkbox id="priority-filter" checked={filters.priorityOnly} onCheckedChange={(c) => setFilters({ ...filters, priorityOnly: !!c })} />
+                <Label htmlFor="priority-filter" className="text-sm font-normal cursor-pointer">Show Priority Orders Only</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox id="recurring-filter" checked={filters.recurringOnly} onCheckedChange={(c) => setFilters({ ...filters, recurringOnly: !!c })} />
+                <Label htmlFor="recurring-filter" className="text-sm font-normal cursor-pointer">Show Recurring Orders Only</Label>
+              </div>
+            </div>
             <div className="flex gap-2 pt-2 border-t border-border">
-              <Button variant="outline" className="flex-1" onClick={() => { setFilters({ status: "all", dateFrom: "", dateTo: "", products: [] }); setFilterDialogOpen(false); }}>
+              <Button variant="outline" className="flex-1" onClick={() => { setFilters({ status: "all", dateFrom: "", dateTo: "", products: [], priorityOnly: false, recurringOnly: false, minQty: "", maxQty: "" }); setFilterDialogOpen(false); }}>
                 Reset
               </Button>
               <Button className="flex-1" onClick={() => setFilterDialogOpen(false)}>
@@ -828,20 +947,28 @@ export default function Orders() {
               Select 1–10 (1 = highest). In-production orders are excluded from priority sorting.
             </p>
             <div className="grid grid-cols-5 gap-2">
-              {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-                <button
-                  key={n}
-                  onClick={() => setSelectedPriority(n)}
-                  className={cn(
-                    "h-10 rounded-lg font-semibold text-sm transition-all",
-                    selectedPriority === n
-                      ? "bg-primary text-primary-foreground shadow-md scale-105"
-                      : "bg-secondary hover:bg-secondary/70 text-foreground"
-                  )}
-                >
-                  {n}
-                </button>
-              ))}
+              {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => {
+                const isUsed = orders.some(
+                  (o) => o.status === "pending" && o.priority === n && o.id !== selectedOrderId
+                );
+                return (
+                  <button
+                    key={n}
+                    disabled={isUsed}
+                    onClick={() => setSelectedPriority(n)}
+                    className={cn(
+                      "h-10 rounded-lg font-semibold text-sm transition-all",
+                      isUsed
+                        ? "bg-secondary/50 text-muted-foreground cursor-not-allowed opacity-50 border border-transparent"
+                        : selectedPriority === n
+                        ? "bg-primary text-primary-foreground shadow-md scale-105"
+                        : "bg-secondary hover:bg-secondary/70 text-foreground"
+                    )}
+                  >
+                    {n}
+                  </button>
+                );
+              })}
             </div>
             {selectedPriority && (
               <div className="p-2.5 bg-primary/10 rounded-lg text-sm text-center font-medium text-primary">

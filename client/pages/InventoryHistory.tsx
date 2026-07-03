@@ -199,7 +199,7 @@ export default function InventoryHistory() {
                         "text-sm md:text-base font-bold shrink-0", 
                         log.type === "IN" ? "text-success" : "text-destructive"
                       )}>
-                        {log.type === "IN" ? "+" : "-"}{log.quantity.toLocaleString()} kg
+                        {log.type === "IN" ? "+" : "-"}{log.quantity.toLocaleString()} {products.find(p => p.id === log.productId)?.unit || 'kg'}
                       </span>
                       {log.reference && (
                         <span className={cn(

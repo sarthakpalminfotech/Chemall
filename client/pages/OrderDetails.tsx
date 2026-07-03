@@ -8,9 +8,11 @@ import { useRef } from "react";
 import { cn } from "@/lib/utils";
 
 function StatusBadge({ status }: { status: string }) {
+  if (status === "dispatched")
+    return <span className="badge bg-slate-100 text-slate-700 border-slate-200 shadow-sm border px-2 py-0.5 rounded-md flex items-center gap-1.5 text-xs font-semibold w-fit"><span className="w-1.5 h-1.5 rounded-full bg-slate-500" />Dispatched</span>;
   if (status === "in_production")
-    return <span className="badge badge-in-production"><span className="w-1.5 h-1.5 rounded-full bg-success" />In Production</span>;
-  return <span className="badge badge-pending"><span className="w-1.5 h-1.5 rounded-full bg-warning" />Pending</span>;
+    return <span className="badge badge-in-production w-fit"><span className="w-1.5 h-1.5 rounded-full bg-success" />In Production</span>;
+  return <span className="badge badge-pending w-fit"><span className="w-1.5 h-1.5 rounded-full bg-warning" />Pending</span>;
 }
 
 export default function OrderDetails() {
@@ -57,7 +59,7 @@ export default function OrderDetails() {
     <div className="w-full">
       <div className="px-4 md:px-6 py-6 max-w-5xl mx-auto">
         {/* Header */}
-        <Link to="/orders" className="inline-flex items-center gap-2 text-primary hover:opacity-75 transition-opacity mb-6 text-sm font-medium">
+        <Link to="/orders" className="inline-flex items-center gap-2 text-primary hover:opacity-75 transition-opacity mb-6 text-sm font-medium print:hidden">
           <ArrowLeft className="w-4 h-4" /> Back to Orders
         </Link>
 
@@ -65,10 +67,10 @@ export default function OrderDetails() {
           <div>
             <h1 className="text-2xl font-bold text-foreground tracking-tight">Order Details</h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              {order.batchNumber ?? `Order #${order.id}`}
+              {order.batchNumber ?? (order.status === "pending" ? "Pending Order" : `Order #${order.id}`)}
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 print:hidden">
             <Button variant="outline" size="sm" className="gap-2" onClick={() => window.print()}>
               <Printer className="w-4 h-4" /> Print
             </Button>
@@ -138,7 +140,7 @@ export default function OrderDetails() {
             )}
 
             {/* In Production Details */}
-            {order.status === "in_production" && (
+            {(order.status === "in_production" || order.status === "dispatched") && (
               <>
                 <div className="card-elevated p-5">
                   <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-4">Production Information</h3>
@@ -186,7 +188,7 @@ export default function OrderDetails() {
                       <QRCodeSVG value={order.batchNumber} size={160} level="H" includeMargin />
                       <QRCodeCanvas ref={qrRef} value={order.batchNumber} size={400} level="H" includeMargin style={{ display: "none" }} />
                       <p className="text-xs font-mono text-muted-foreground">{order.batchNumber}</p>
-                      <div className="flex gap-2 w-full max-w-xs">
+                      <div className="flex gap-2 w-full max-w-xs print:hidden">
                         <Button variant="outline" size="sm" className="flex-1 gap-2" onClick={downloadQR}>
                           <Download className="w-3.5 h-3.5" /> Download
                         </Button>
@@ -246,7 +248,7 @@ export default function OrderDetails() {
                 )}
 
                 {/* Actions */}
-                <div className="border-t border-border pt-4 space-y-2">
+                <div className="border-t border-border pt-4 space-y-2 print:hidden">
                   <Button variant="outline" className="w-full">Edit Order</Button>
                   {order.status === "pending" && (
                     <Link to="/orders">

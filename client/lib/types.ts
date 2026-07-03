@@ -9,12 +9,13 @@ export interface Product {
   alertThreshold?: number; // threshold in kg, default 100
   isContainer?: boolean; // if true, this raw material is a container
   capacity?: number; // capacity in kg if isContainer
+  unit?: string; // e.g., kg, L, pcs
   createdAt: Date;
 }
 
 
 // Order Types
-export type OrderStatus = "pending" | "in_production";
+export type OrderStatus = "pending" | "in_production" | "dispatched";
 
 export interface Order {
   id: string;

@@ -45,6 +45,7 @@ interface AppActions {
     qrDataUrl: string
   ) => Promise<{ batchNumber: string; stockWarnings: string[] }>;
   assignPriority: (orderId: string, priority: number | undefined) => Promise<void>;
+  markAsDispatched: (orderId: string) => Promise<void>;
 
   // Employees
   addEmployee: (employee: Omit<Employee, "id" | "createdAt" | "updatedAt">) => Promise<Employee>;
@@ -113,6 +114,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           alertThreshold: p.alert_threshold ? Number(p.alert_threshold) : 100,
           isContainer: p.is_container,
           capacity: p.capacity ? Number(p.capacity) : undefined,
+          unit: p.unit || "kg",
           createdAt: new Date(p.created_at),
         };
       });
@@ -282,6 +284,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         alert_threshold: data.alertThreshold ?? 100.00,
         is_container: data.isContainer ?? false,
         capacity: data.capacity ?? null,
+        unit: data.unit || "kg",
       })
       .select()
       .single();
@@ -305,6 +308,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       alertThreshold: Number(newProd.alert_threshold ?? 100),
       isContainer: newProd.is_container,
       capacity: newProd.capacity ? Number(newProd.capacity) : undefined,
+      unit: newProd.unit || "kg",
       createdAt: new Date(newProd.created_at),
     };
   };
@@ -318,6 +322,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         alert_threshold: data.alertThreshold ?? 100.00,
         is_container: data.isContainer ?? false,
         capacity: data.capacity ?? null,
+        unit: data.unit || "kg",
       })
       .eq("id", id)
       .select()
@@ -346,6 +351,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       alertThreshold: Number(updatedProd.alert_threshold ?? 100),
       isContainer: updatedProd.is_container,
       capacity: updatedProd.capacity ? Number(updatedProd.capacity) : undefined,
+      unit: updatedProd.unit || "kg",
       createdAt: new Date(updatedProd.created_at),
     };
   };
@@ -460,6 +466,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase
       .from("orders")
       .update({ priority: priority || null })
+      .eq("id", orderId);
+    if (error) throw error;
+    await refreshData();
+  };
+
+  const markAsDispatched = async (orderId: string) => {
+    const { error } = await supabase
+      .from("orders")
+      .update({ status: "dispatched" })
       .eq("id", orderId);
     if (error) throw error;
     await refreshData();
@@ -695,6 +710,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     updateOrder,
     markInProduction,
     assignPriority,
+    markAsDispatched,
     addEmployee,
     addSupplier,
     addInventory,

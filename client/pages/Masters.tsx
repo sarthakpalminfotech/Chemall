@@ -49,7 +49,7 @@ export default function Masters() {
   const [productFilter, setProductFilter] = useState<ProductType>("finished_good");
   const [productDialogOpen, setProductDialogOpen] = useState(false);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
-  const [productForm, setProductForm] = useState({ name: "", type: "finished_good" as ProductType, containerTypeIds: [] as string[], alertThreshold: 100, isContainer: false, capacity: "" });
+  const [productForm, setProductForm] = useState({ name: "", type: "finished_good" as ProductType, containerTypeIds: [] as string[], alertThreshold: 100, isContainer: false, capacity: "", unit: "kg" });
   const [productNameError, setProductNameError] = useState("");
 
   // ── Employee state ───────────────────────────────────────────────────────────
@@ -67,14 +67,15 @@ export default function Masters() {
   const [newTypeDialogOpen, setNewTypeDialogOpen] = useState(false);
   const [newTypeName, setNewTypeName] = useState("");
   const [customTypes, setCustomTypes] = useState<string[]>([]);
+  
+  const [newUnitDialogOpen, setNewUnitDialogOpen] = useState(false);
+  const [newUnitName, setNewUnitName] = useState("");
+  const [customUnits, setCustomUnits] = useState<string[]>([]);
 
   // ── Product handlers ─────────────────────────────────────────────────────────
   const handleSaveProduct = async () => {
     if (!productForm.name.trim()) { setProductNameError("Name is required"); return; }
     
-    // Check for duplicate name ONLY if we are adding new or if name changed during edit
-    const dup = products.find(p => p.name.toLowerCase() === productForm.name.trim().toLowerCase() && p.id !== editingProductId);
-    if (dup) { setProductNameError("A product with this name already exists"); return; }
     
     try {
       if (editingProductId) {
@@ -84,7 +85,8 @@ export default function Masters() {
           containerTypes: productForm.type === "finished_good" ? productForm.containerTypeIds : undefined,
           alertThreshold: productForm.alertThreshold,
           isContainer: productForm.type === "raw_material" ? productForm.isContainer : undefined,
-          capacity: productForm.type === "raw_material" && productForm.isContainer ? parseFloat(productForm.capacity) || 0 : undefined
+          capacity: productForm.type === "raw_material" && productForm.isContainer ? parseFloat(productForm.capacity) || 0 : undefined,
+          unit: productForm.type === "raw_material" ? productForm.unit : "kg"
         });
         toast({ title: "Product updated" });
       } else {
@@ -94,13 +96,14 @@ export default function Masters() {
           containerTypes: productForm.type === "finished_good" ? productForm.containerTypeIds : undefined,
           alertThreshold: productForm.alertThreshold,
           isContainer: productForm.type === "raw_material" ? productForm.isContainer : undefined,
-          capacity: productForm.type === "raw_material" && productForm.isContainer ? parseFloat(productForm.capacity) || 0 : undefined
+          capacity: productForm.type === "raw_material" && productForm.isContainer ? parseFloat(productForm.capacity) || 0 : undefined,
+          unit: productForm.type === "raw_material" ? productForm.unit : "kg"
         });
         toast({ title: "Product added" });
       }
       
       setProductDialogOpen(false);
-      setProductForm({ name: "", type: "finished_good", containerTypeIds: [], alertThreshold: 100, isContainer: false, capacity: "" });
+      setProductForm({ name: "", type: "finished_good", containerTypeIds: [], alertThreshold: 100, isContainer: false, capacity: "", unit: "kg" });
       setEditingProductId(null);
       setProductNameError("");
     } catch (err: any) {
@@ -110,7 +113,7 @@ export default function Masters() {
 
   const openAddProductModal = () => {
     setEditingProductId(null);
-    setProductForm({ name: "", type: "finished_good", containerTypeIds: [], alertThreshold: 100, isContainer: false, capacity: "" });
+    setProductForm({ name: "", type: "finished_good", containerTypeIds: [], alertThreshold: 100, isContainer: false, capacity: "", unit: "kg" });
     setProductNameError("");
     setProductDialogOpen(true);
   };
@@ -123,7 +126,8 @@ export default function Masters() {
       containerTypeIds: product.containerTypes || [],
       alertThreshold: product.alertThreshold || 100,
       isContainer: product.isContainer || false,
-      capacity: product.capacity ? String(product.capacity) : ""
+      capacity: product.capacity ? String(product.capacity) : "",
+      unit: product.unit || "kg"
     });
     setProductNameError("");
     setProductDialogOpen(true);
@@ -195,6 +199,14 @@ export default function Masters() {
     setNewTypeDialogOpen(false);
   };
 
+  const handleAddCustomUnit = () => {
+    if (!newUnitName.trim()) return;
+    setCustomUnits(p => [...p, newUnitName.trim()]);
+    setProductForm(f => ({ ...f, unit: newUnitName.trim() }));
+    setNewUnitName("");
+    setNewUnitDialogOpen(false);
+  };
+
   const filteredProducts = products.filter(p => p.type === productFilter);
 
   return (
@@ -220,7 +232,7 @@ export default function Masters() {
                 setProductDialogOpen(open);
                 if (!open) {
                   setEditingProductId(null);
-                  setProductForm({ name: "", type: "finished_good", containerTypeIds: [], alertThreshold: 100, isContainer: false, capacity: "" });
+                  setProductForm({ name: "", type: "finished_good", containerTypeIds: [], alertThreshold: 100, isContainer: false, capacity: "", unit: "kg" });
                 }
               }}>
                 <DialogTrigger asChild>
@@ -268,6 +280,36 @@ export default function Masters() {
 
                     {productForm.type === "raw_material" && (
                       <div className="space-y-4">
+                        <div>
+                          <Label className="field-label">Unit <span className="text-destructive">*</span></Label>
+                          <div className="flex gap-2">
+                            <Select value={productForm.unit} onValueChange={v => setProductForm(f => ({ ...f, unit: v }))}>
+                              <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="kg">kg</SelectItem>
+                                <SelectItem value="ltr">ltr</SelectItem>
+                                <SelectItem value="pcs">pcs</SelectItem>
+                                {customUnits.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                            <Dialog open={newUnitDialogOpen} onOpenChange={setNewUnitDialogOpen}>
+                              <DialogTrigger asChild>
+                                <Button variant="outline" size="icon"><Plus className="w-4 h-4" /></Button>
+                              </DialogTrigger>
+                              <DialogContent className="max-w-xs">
+                                <DialogHeader><DialogTitle>Add Custom Unit</DialogTitle></DialogHeader>
+                                <div className="space-y-4">
+                                  <Input value={newUnitName} onChange={e => setNewUnitName(e.target.value)} placeholder="Custom unit (e.g., g, ml)" autoFocus />
+                                  <div className="flex gap-2">
+                                    <Button variant="outline" className="flex-1" onClick={() => setNewUnitDialogOpen(false)}>Cancel</Button>
+                                    <Button className="flex-1" onClick={handleAddCustomUnit} disabled={!newUnitName.trim()}>Add</Button>
+                                  </div>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+                          </div>
+                        </div>
+
                         <label className="flex items-center gap-2 cursor-pointer border p-3 rounded-lg hover:bg-secondary/50">
                           <Checkbox checked={productForm.isContainer} onCheckedChange={(checked) => setProductForm(f => ({ ...f, isContainer: checked as boolean }))} />
                           <div className="space-y-1">
@@ -285,7 +327,7 @@ export default function Masters() {
                     )}
 
                     <div>
-                      <Label className="field-label">Alert Threshold (kg)</Label>
+                      <Label className="field-label">Alert Threshold ({productForm.type === "raw_material" ? productForm.unit : "kg"})</Label>
                       <Input 
                         type="number" 
                         min="0"
@@ -334,13 +376,13 @@ export default function Masters() {
                       {p.alertThreshold !== undefined && (
                         <div className="flex items-center gap-2">
                           <span className="w-1 h-1 rounded-full bg-muted-foreground/30" />
-                          <span><span className="font-medium text-foreground">{p.alertThreshold} kg</span> Threshold</span>
+                          <span><span className="font-medium text-foreground">{p.alertThreshold} {p.unit || 'kg'}</span> Threshold</span>
                         </div>
                       )}
                       {p.isContainer && (
                         <div className="flex items-center gap-2">
                           <span className="w-1 h-1 rounded-full bg-primary/40" />
-                          <span className="text-primary font-medium">Container ({p.capacity} kg)</span>
+                          <span className="text-primary font-medium">Container ({p.capacity} {p.unit || 'kg'})</span>
                         </div>
                       )}
                     </div>

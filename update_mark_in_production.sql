@@ -1,33 +1,3 @@
--- =========================================================================
--- DATABASE UPDATE QUERY FOR CONTAINER CAPACITY & DISPATCH QUANTITIES
--- Run this in the Supabase SQL Editor to update your database schema.
--- =========================================================================
-
--- 1. Add capacity column to container_types
-ALTER TABLE container_types ADD COLUMN IF NOT EXISTS capacity NUMERIC NOT NULL DEFAULT 0.00;
-
--- 2. Update default capacity values for seeded containers
-UPDATE container_types SET capacity = 20.00 WHERE id = 'c0000000-0000-0000-0000-000000000001';
-UPDATE container_types SET capacity = 50.00 WHERE id = 'c0000000-0000-0000-0000-000000000002';
-UPDATE container_types SET capacity = 1.00  WHERE id = 'c0000000-0000-0000-0000-000000000003';
-UPDATE container_types SET capacity = 0.50  WHERE id = 'c0000000-0000-0000-0000-000000000004';
-UPDATE container_types SET capacity = 5.00  WHERE id = 'c0000000-0000-0000-0000-000000000005';
-UPDATE container_types SET capacity = 25.00 WHERE id = 'c0000000-0000-0000-0000-000000000006';
-
--- 3. Recreate the order_dispatch_containers table to support quantities per product
-DROP TABLE IF EXISTS order_dispatch_containers CASCADE;
-
-CREATE TABLE order_dispatch_containers (
-  order_id          UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-  product_id        UUID NOT NULL REFERENCES products(id),
-  container_type_id UUID NOT NULL REFERENCES container_types(id),
-  quantity          INTEGER NOT NULL DEFAULT 1 CHECK (quantity >= 0),
-  PRIMARY KEY (order_id, product_id, container_type_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_order_dispatch_containers_order ON order_dispatch_containers(order_id);
-
--- 4. Recreate the mark_in_production RPC function to parse JSON dispatch container records
 CREATE OR REPLACE FUNCTION mark_in_production(
   p_order_id                 UUID,
   p_dispatch_containers_json JSONB,  -- Array of {product_id, container_type_id, quantity}

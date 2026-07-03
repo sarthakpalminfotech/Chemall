@@ -12,14 +12,14 @@ export default function AppLayout({ children }: AppLayoutProps) {
   return (
     <div className="flex h-screen bg-background">
       {/* Desktop Sidebar */}
-      <div className="hidden md:block md:w-64 border-r border-border flex-shrink-0">
+      <div className="hidden md:block md:w-64 border-r border-border flex-shrink-0 print:hidden">
         <Sidebar />
       </div>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Header */}
-        <header className="h-14 border-b border-border bg-card/80 backdrop-blur-sm px-4 md:px-6 flex items-center justify-between flex-shrink-0 z-10">
+        <header className="h-14 border-b border-border bg-card/80 backdrop-blur-sm px-4 md:px-6 flex items-center justify-between flex-shrink-0 z-10 print:hidden">
           {/* Mobile: brand name */}
           <div className="flex items-center gap-2 md:hidden">
             <div className="w-7 h-7 bg-gradient-to-br from-primary to-blue-400 rounded-md flex items-center justify-center">
@@ -50,7 +50,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
       </div>
 
       {/* Mobile Bottom Navigation */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 border-t border-border bg-card/95 backdrop-blur-sm z-40">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 border-t border-border bg-card/95 backdrop-blur-sm z-40 print:hidden">
         <BottomNav />
       </div>
     </div>

@@ -20,7 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, History, X, Package, AlertTriangle, TrendingDown, TrendingUp, Minus, Mic, Camera } from "lucide-react";
+import { Plus, History, X, Package, AlertTriangle, TrendingDown, TrendingUp, Minus, Mic, Camera, Search } from "lucide-react";
 import { formatDate } from "date-fns";
 import { Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
@@ -38,6 +38,7 @@ export default function Inventory() {
   const { toast } = useToast();
 
   const [productFilter, setProductFilter] = useState<ProductType>("finished_good");
+  const [searchTerm, setSearchTerm] = useState("");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addItems, setAddItems] = useState<AddItem[]>([{ productId: "", quantity: 0 }]);
   const [addType, setAddType] = useState<ProductType>("finished_good");
@@ -47,7 +48,10 @@ export default function Inventory() {
   const [removeQuantity, setRemoveQuantity] = useState(0);
   const [removeNotes, setRemoveNotes] = useState("");
 
-  const filteredInventory = inventory.filter(i => i.productType === productFilter);
+  const filteredInventory = inventory.filter(i => 
+    i.productType === productFilter &&
+    (!searchTerm || i.productName.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
   const availableProducts = products.filter(p => p.type === addType);
   const usedIds = addItems.map(i => i.productId).filter(Boolean);
 
@@ -169,7 +173,7 @@ export default function Inventory() {
                         <Input
                           type="number"
                           min="1"
-                          placeholder="Quantity (kg)"
+                          placeholder={`Quantity (${products.find(p => p.id === item.productId)?.unit || 'kg'})`}
                           value={item.quantity || ""}
                           onChange={e => updateRow(idx, "quantity", parseInt(e.target.value) || 0)}
                           className="text-sm"
@@ -211,7 +215,7 @@ export default function Inventory() {
                     </Select>
                   </div>
                   <div>
-                    <Label className="field-label">Quantity (kg)</Label>
+                    <Label className="field-label">Quantity ({products.find(p => p.id === removeProductId)?.unit || 'kg'})</Label>
                     <Input
                       type="number"
                       min="1"
@@ -252,14 +256,24 @@ export default function Inventory() {
         </div>
       </div>
 
-      {/* Type Toggle */}
-      <div className="px-4 md:px-6 mb-5">
+      {/* Type Toggle & Search */}
+      <div className="px-4 md:px-6 mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <Tabs value={productFilter} onValueChange={v => setProductFilter(v as ProductType)}>
-          <TabsList className="grid w-full grid-cols-2 max-w-xs">
+          <TabsList className="grid w-full grid-cols-2 w-[320px]">
             <TabsTrigger value="finished_good">Finished Goods</TabsTrigger>
             <TabsTrigger value="raw_material">Raw Material</TabsTrigger>
           </TabsList>
         </Tabs>
+        
+        <div className="relative w-full max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input 
+            placeholder="Search products..." 
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9 bg-card border-border h-10 shadow-sm"
+          />
+        </div>
       </div>
 
       {/* Inventory Grid */}
@@ -314,7 +328,7 @@ export default function Inventory() {
                     <p className={cn("text-3xl font-bold tracking-tight", isNegative ? "text-destructive" : isLow ? "text-warning" : "text-foreground")}>
                       {item.quantity.toLocaleString()}
                     </p>
-                    <p className="text-sm text-muted-foreground mt-0.5">kg in stock</p>
+                    <p className="text-sm text-muted-foreground mt-0.5">{product?.unit || 'kg'} in stock</p>
                   </div>
 
                   <p className="text-[11px] text-muted-foreground mt-3">

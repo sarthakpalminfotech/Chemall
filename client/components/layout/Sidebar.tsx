@@ -7,6 +7,7 @@ import {
   StickyNote,
   Zap,
   FlaskConical,
+  QrCode,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -16,6 +17,7 @@ const navigationItems = [
   { path: "/inventory", label: "Inventory", icon: Package },
   { path: "/masters", label: "Masters", icon: Settings },
   { path: "/notes", label: "Notes", icon: StickyNote },
+  { path: "/scan-qr", label: "Scan QR", icon: QrCode },
   { path: "/leads", label: "Leads", icon: Zap, disabled: true, comingSoon: true },
 ];
 

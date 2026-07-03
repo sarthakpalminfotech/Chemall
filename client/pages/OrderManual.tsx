@@ -307,20 +307,7 @@ export default function OrderManual() {
             <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </div>
 
-          {/* ── 4. Currency ── */}
-          <div className="card-elevated p-5">
-            <Label className="field-label">Currency</Label>
-            <Select value={currency} onValueChange={setCurrency}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CURRENCIES.map((c) => (
-                  <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+
 
           {/* ── 5. Preferred Containers ── */}
           {availableContainers.length > 0 && (
@@ -361,7 +348,6 @@ export default function OrderManual() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Total Amount</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Σ(quantity × rate) — live</p>
               </div>
               <p className="text-3xl font-bold text-foreground tracking-tight">
                 {currencySymbol(currency)}{totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

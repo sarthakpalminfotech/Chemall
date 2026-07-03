@@ -20,8 +20,6 @@ CREATE TABLE IF NOT EXISTS products (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Case-insensitive unique name
-CREATE UNIQUE INDEX IF NOT EXISTS products_name_unique_idx ON products (LOWER(name));
 
 -- Many-to-many: which container types belong to a finished good
 CREATE TABLE IF NOT EXISTS product_container_types (
@@ -260,6 +258,7 @@ DECLARE
   v_batch      TEXT;
   v_warnings   TEXT[] := '{}';
   v_product    RECORD;
+  v_container  RECORD;
   v_current_qty NUMERIC;
   v_order_status TEXT;
 BEGIN
@@ -332,6 +331,44 @@ BEGIN
     -- Create OUT log
     INSERT INTO inventory_logs (product_id, product_name, quantity, type, reference)
     VALUES (v_product.product_id, v_product.product_name, v_product.quantity, 'OUT', v_batch);
+  END LOOP;
+
+  -- 7. Deduct container inventory (raw material) + create OUT logs
+  FOR v_container IN
+    SELECT 
+      (elem->>'container_type_id')::UUID AS container_id, 
+      SUM((elem->>'quantity')::INTEGER) AS total_qty
+    FROM jsonb_array_elements(p_dispatch_containers_json) AS elem
+    GROUP BY (elem->>'container_type_id')::UUID
+  LOOP
+    DECLARE
+      v_c_name TEXT;
+      v_c_unit TEXT;
+    BEGIN
+      -- Lookup the product name and unit for the container
+      SELECT name, unit INTO v_c_name, v_c_unit FROM products WHERE id = v_container.container_id;
+      
+      -- Get or create inventory row for the container
+      INSERT INTO inventory (product_id, product_name, product_type, quantity)
+      VALUES (v_container.container_id, v_c_name, 'raw_material', 0)
+      ON CONFLICT (product_id) DO NOTHING;
+
+      -- Deduct
+      UPDATE inventory
+      SET quantity     = quantity - v_container.total_qty,
+          last_updated = NOW()
+      WHERE product_id = v_container.container_id
+      RETURNING quantity INTO v_current_qty;
+
+      -- Warn if negative
+      IF v_current_qty < 0 THEN
+        v_warnings := v_warnings || (v_c_name || ' stock is now ' || v_current_qty || ' ' || COALESCE(v_c_unit, 'kg'));
+      END IF;
+
+      -- Create OUT log
+      INSERT INTO inventory_logs (product_id, product_name, quantity, type, reference)
+      VALUES (v_container.container_id, v_c_name, v_container.total_qty, 'OUT', v_batch || ' (Container)');
+    END;
   END LOOP;
 
   RETURN jsonb_build_object(

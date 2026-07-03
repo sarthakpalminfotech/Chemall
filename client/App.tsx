@@ -18,6 +18,7 @@ import Masters from "./pages/Masters";
 import Inventory from "./pages/Inventory";
 import InventoryHistory from "./pages/InventoryHistory";
 import Notes from "./pages/Notes";
+import ScanQR from "./pages/ScanQR";
 import Placeholder from "./pages/Placeholder";
 import NotFound from "./pages/NotFound";
 
@@ -42,6 +43,7 @@ const App = () => (
               <Route path="/inventory/history" element={<InventoryHistory />} />
               <Route path="/masters" element={<Masters />} />
               <Route path="/notes" element={<Notes />} />
+              <Route path="/scan-qr" element={<ScanQR />} />
               <Route path="/leads" element={<Placeholder title="Leads" comingSoon />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />

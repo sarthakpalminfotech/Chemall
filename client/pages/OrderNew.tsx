@@ -14,37 +14,7 @@ export default function OrderNew() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl">
-          {/* Intake from Lead */}
-          <Card className="p-6 flex flex-col items-center text-center opacity-50 cursor-not-allowed border-border/50">
-            <div className="w-12 h-12 bg-secondary rounded-lg flex items-center justify-center mb-4">
-              <Download className="w-6 h-6 text-muted-foreground" />
-            </div>
-            <h3 className="text-lg font-semibold text-foreground mb-2">Intake from Lead</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              Convert a lead into an order
-            </p>
-            <span className="px-3 py-1 bg-secondary text-muted-foreground text-xs font-medium rounded-full">
-              Coming Soon
-            </span>
-          </Card>
-
-          {/* Import Order */}
-          <Link to="/orders/new/import">
-            <Card className="p-6 flex flex-col items-center text-center h-full hover:border-primary/50 transition-colors cursor-pointer">
-              <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
-                <Upload className="w-6 h-6 text-primary" />
-              </div>
-              <h3 className="text-lg font-semibold text-foreground mb-2">Import Order</h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                Paste and parse order details
-              </p>
-              <Button variant="outline" size="sm">
-                Get Started
-              </Button>
-            </Card>
-          </Link>
-
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl">
           {/* Manual Add */}
           <Link to="/orders/new/manual">
             <Card className="p-6 flex flex-col items-center text-center h-full hover:border-primary/50 transition-colors cursor-pointer border-primary/30 bg-primary/5">
@@ -58,6 +28,20 @@ export default function OrderNew() {
               <Button size="sm">Get Started</Button>
             </Card>
           </Link>
+
+          {/* Intake from Lead */}
+          <Card className="p-6 flex flex-col items-center text-center opacity-50 cursor-not-allowed border-border/50">
+            <div className="w-12 h-12 bg-secondary rounded-lg flex items-center justify-center mb-4">
+              <Download className="w-6 h-6 text-muted-foreground" />
+            </div>
+            <h3 className="text-lg font-semibold text-foreground mb-2">Intake from Lead</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Convert a lead into an order
+            </p>
+            <span className="px-3 py-1 bg-secondary text-muted-foreground text-xs font-medium rounded-full">
+              Coming Soon
+            </span>
+          </Card>
         </div>
       </div>
     </div>
