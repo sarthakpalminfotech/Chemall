@@ -60,13 +60,16 @@ export default function Dashboard() {
   const { orders, alerts, inventory, inventoryLogs, suppliers, products, leads } = useStore();
   const [dispatchView, setDispatchView] = useState<"monthly" | "weekly">("monthly");
   
-  const [dateFilter, setDateFilter] = useState<"today" | "week" | "month" | "custom">("today");
+  const [dateFilter, setDateFilter] = useState<"today" | "week" | "month" | "year" | "custom">("today");
   const [customStartDate, setCustomStartDate] = useState<string>("");
   const [customEndDate, setCustomEndDate] = useState<string>("");
 
-  // ─── KPIs ────────────────────────────────────────────────────────────────────
-  const kpis = useMemo(() => {
-    const isWithinDateRange = (dateString: string | Date) => {
+  const [leadDateFilter, setLeadDateFilter] = useState<"today" | "week" | "month" | "year" | "custom">("today");
+  const [leadCustomStartDate, setLeadCustomStartDate] = useState<string>("");
+  const [leadCustomEndDate, setLeadCustomEndDate] = useState<string>("");
+
+  const isWithinDateRange = useMemo(() => {
+    return (dateString: string | Date) => {
       const d = new Date(dateString);
       d.setHours(0, 0, 0, 0);
   
@@ -87,6 +90,11 @@ export default function Dashboard() {
         const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
         return d >= monthStart;
       }
+
+      if (dateFilter === "year") {
+        const yearStart = new Date(today.getFullYear(), 0, 1);
+        return d >= yearStart;
+      }
       
       if (dateFilter === "custom") {
         if (!customStartDate || !customEndDate) return true;
@@ -98,7 +106,10 @@ export default function Dashboard() {
       }
       return true;
     };
+  }, [dateFilter, customStartDate, customEndDate]);
 
+  // ─── KPIs ────────────────────────────────────────────────────────────────────
+  const kpis = useMemo(() => {
     const pendingOrders = orders.filter((o) => o.status === "pending" && isWithinDateRange(o.date)).length;
     const inProduction = orders.filter((o) => o.status === "in_production" && isWithinDateRange(o.date)).length;
 
@@ -114,7 +125,66 @@ export default function Dashboard() {
     const newLeadsCount = leads.filter(l => l.status === "new" && isWithinDateRange(l.createdAt)).length;
 
     return { pendingOrders, inProduction, dispatchQty, newCustomers, newLeadsCount };
-  }, [orders, inventoryLogs, suppliers, leads, dateFilter, customStartDate, customEndDate]);
+  }, [orders, inventoryLogs, suppliers, leads, isWithinDateRange]);
+
+  const isWithinLeadDateRange = useMemo(() => {
+    return (dateString: string | Date) => {
+      const d = new Date(dateString);
+      d.setHours(0, 0, 0, 0);
+  
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+  
+      if (leadDateFilter === "today") {
+        return d.getTime() === today.getTime();
+      }
+      
+      if (leadDateFilter === "week") {
+        const firstDayOfWeek = new Date(today);
+        firstDayOfWeek.setDate(today.getDate() - today.getDay());
+        return d >= firstDayOfWeek;
+      }
+      
+      if (leadDateFilter === "month") {
+        const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+        return d >= monthStart;
+      }
+
+      if (leadDateFilter === "year") {
+        const yearStart = new Date(today.getFullYear(), 0, 1);
+        return d >= yearStart;
+      }
+      
+      if (leadDateFilter === "custom") {
+        if (!leadCustomStartDate || !leadCustomEndDate) return true;
+        const start = new Date(leadCustomStartDate);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(leadCustomEndDate);
+        end.setHours(23, 59, 59, 999);
+        return d >= start && d <= end;
+      }
+      return true;
+    };
+  }, [leadDateFilter, leadCustomStartDate, leadCustomEndDate]);
+
+  // ─── Leads Chart Data ────────────────────────────────────────────────────────
+  const leadsData = useMemo(() => {
+    const filteredLeads = leads.filter(l => isWithinLeadDateRange(l.createdAt));
+    const counts = { "new": 0, "in discussion": 0, "paused/hold": 0, "won": 0, "lost": 0, "disqualified": 0 };
+    filteredLeads.forEach(l => {
+      if (counts[l.status as keyof typeof counts] !== undefined) {
+        counts[l.status as keyof typeof counts]++;
+      }
+    });
+    return [
+      { label: "New", value: counts["new"] },
+      { label: "Discussion", value: counts["in discussion"] },
+      { label: "Paused", value: counts["paused/hold"] },
+      { label: "Won", value: counts["won"] },
+      { label: "Lost", value: counts["lost"] },
+      { label: "Disqual.", value: counts["disqualified"] },
+    ];
+  }, [leads, isWithinLeadDateRange]);
 
   // ─── Dispatch Chart Data ─────────────────────────────────────────────────────
   const dispatchData = useMemo(() => {
@@ -205,6 +275,7 @@ export default function Dashboard() {
                 <SelectItem value="today">Today</SelectItem>
                 <SelectItem value="week">This Week</SelectItem>
                 <SelectItem value="month">This Month</SelectItem>
+                <SelectItem value="year">This Year</SelectItem>
                 <SelectItem value="custom">Custom Date</SelectItem>
               </SelectContent>
             </Select>
@@ -306,9 +377,9 @@ export default function Dashboard() {
           <div className="xl:col-span-2">
             <div className="flex items-center justify-between mb-4">
               <h2 className="section-title">Recent Alerts</h2>
-              <button className="text-xs text-primary font-medium hover:underline flex items-center gap-1">
+              <Link to="/alerts" className="text-xs text-primary font-medium hover:underline flex items-center gap-1">
                 View all <ArrowRight className="w-3 h-3" />
-              </button>
+              </Link>
             </div>
             <div className="space-y-2">
               {sortedAlerts.slice(0, 6).map((alert) => {
@@ -346,73 +417,165 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Dispatch Chart */}
+          {/* Leads Chart */}
           <div className="xl:col-span-3">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="section-title">Dispatch Summary</h2>
-              <Select value={dispatchView} onValueChange={(v: any) => setDispatchView(v)}>
-                <SelectTrigger className="w-36 h-8 text-xs">
+              <h2 className="section-title">Lead Summary</h2>
+              <Select value={leadDateFilter} onValueChange={(v: any) => setLeadDateFilter(v)}>
+                <SelectTrigger className="w-[100px] h-8 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="monthly">Month-wise</SelectItem>
-                  <SelectItem value="weekly">This Week</SelectItem>
+                  <SelectItem value="today">Today</SelectItem>
+                  <SelectItem value="week">This Week</SelectItem>
+                  <SelectItem value="month">This Month</SelectItem>
+                  <SelectItem value="year">This Year</SelectItem>
+                  <SelectItem value="custom">Custom Date</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            
+            {leadDateFilter === "custom" && (
+              <div className="flex items-center gap-2 mb-4 justify-end">
+                <input
+                  type="date"
+                  className="h-8 rounded-md border border-input bg-card px-2 py-1 text-xs shadow-sm transition-colors w-full max-w-[120px]"
+                  value={leadCustomStartDate}
+                  onChange={(e) => setLeadCustomStartDate(e.target.value)}
+                />
+                <span className="text-muted-foreground text-xs">to</span>
+                <input
+                  type="date"
+                  className="h-8 rounded-md border border-input bg-card px-2 py-1 text-xs shadow-sm transition-colors w-full max-w-[120px]"
+                  value={leadCustomEndDate}
+                  onChange={(e) => setLeadCustomEndDate(e.target.value)}
+                />
+              </div>
+            )}
 
             <div className="card-elevated p-4 md:p-6">
-              {/* Mobile horizontal scroll for monthly */}
-              {dispatchView === "monthly" && (
-                <div className="md:hidden overflow-x-auto pb-2">
-                  <div style={{ minWidth: 520 }}>
-                    <ResponsiveContainer width="100%" height={220}>
-                      <BarChart data={dispatchData} barSize={24}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                        <XAxis dataKey="label" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
-                        <YAxis tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} width={50} tickFormatter={(v) => v === 0 ? "0" : `${v/1000}k`} />
-                        <Tooltip content={<CustomTooltip />} cursor={{ fill: "hsl(var(--secondary))" }} />
-                        <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
+              <div className="md:hidden overflow-x-auto pb-2">
+                <div style={{ minWidth: 400 }}>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={leadsData} barSize={32}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} width={30} allowDecimals={false} />
+                      <Tooltip cursor={{ fill: "hsl(var(--secondary))" }} content={({ active, payload, label }: any) => {
+                        if (active && payload && payload.length) {
+                          return (
+                            <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
+                              <p className="text-xs text-muted-foreground mb-1">{label}</p>
+                              <p className="text-sm font-bold text-foreground">{payload[0].value} Leads</p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }} />
+                      <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
-              )}
+              </div>
 
-              {/* Desktop full width */}
               <div className="hidden md:block">
                 <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={dispatchData} barSize={dispatchView === "weekly" ? 32 : 28}>
+                  <BarChart data={leadsData} barSize={40}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
                     <XAxis dataKey="label" tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} width={56} tickFormatter={(v) => v === 0 ? "0" : `${(v/1000).toFixed(v >= 1000 ? 1 : 0)}k`} />
-                    <Tooltip content={<CustomTooltip />} cursor={{ fill: "hsl(var(--secondary))" }} />
+                    <YAxis tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} width={40} allowDecimals={false} />
+                    <Tooltip cursor={{ fill: "hsl(var(--secondary))" }} content={({ active, payload, label }: any) => {
+                      if (active && payload && payload.length) {
+                        return (
+                          <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
+                            <p className="text-xs text-muted-foreground mb-1">{label}</p>
+                            <p className="text-sm font-bold text-foreground">{payload[0].value} Leads</p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }} />
                     <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
 
-              {/* Mobile weekly view */}
-              {dispatchView === "weekly" && (
-                <div className="md:hidden">
+              <div className="mt-3 pt-3 border-t border-border/60 flex items-center justify-between text-xs text-muted-foreground">
+                <span>Total leads in selected period</span>
+                <span className="font-medium text-foreground">
+                  {leadsData.reduce((s, d) => s + d.value, 0)} leads
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ─── Dispatch Chart (Moved Below) ─────────────────────────────────── */}
+        <div className="mt-4 md:mt-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="section-title">Dispatch Summary</h2>
+            <Select value={dispatchView} onValueChange={(v: any) => setDispatchView(v)}>
+              <SelectTrigger className="w-36 h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="monthly">Month-wise</SelectItem>
+                <SelectItem value="weekly">This Week</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="card-elevated p-4 md:p-6">
+            {/* Mobile horizontal scroll for monthly */}
+            {dispatchView === "monthly" && (
+              <div className="md:hidden overflow-x-auto pb-2">
+                <div style={{ minWidth: 520 }}>
                   <ResponsiveContainer width="100%" height={220}>
-                    <BarChart data={dispatchData} barSize={28}>
+                    <BarChart data={dispatchData} barSize={24}>
                       <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
                       <XAxis dataKey="label" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} width={46} tickFormatter={(v) => v === 0 ? "0" : `${v/1000}k`} />
+                      <YAxis tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} width={50} tickFormatter={(v) => v === 0 ? "0" : `${v/1000}k`} />
                       <Tooltip content={<CustomTooltip />} cursor={{ fill: "hsl(var(--secondary))" }} />
                       <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
-              )}
-
-              <div className="mt-3 pt-3 border-t border-border/60 flex items-center justify-between text-xs text-muted-foreground">
-                <span>Total dispatched qty (kg) from production events</span>
-                <span className="font-medium text-foreground">
-                  {dispatchData.reduce((s, d) => s + d.value, 0).toLocaleString()} kg
-                </span>
               </div>
+            )}
+
+            {/* Desktop full width */}
+            <div className="hidden md:block">
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={dispatchData} barSize={dispatchView === "weekly" ? 32 : 28}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                  <XAxis dataKey="label" tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} width={56} tickFormatter={(v) => v === 0 ? "0" : `${(v/1000).toFixed(v >= 1000 ? 1 : 0)}k`} />
+                  <Tooltip content={<CustomTooltip />} cursor={{ fill: "hsl(var(--secondary))" }} />
+                  <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Mobile weekly view */}
+            {dispatchView === "weekly" && (
+              <div className="md:hidden">
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={dispatchData} barSize={28}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                    <XAxis dataKey="label" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} width={46} tickFormatter={(v) => v === 0 ? "0" : `${v/1000}k`} />
+                    <Tooltip content={<CustomTooltip />} cursor={{ fill: "hsl(var(--secondary))" }} />
+                    <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            <div className="mt-3 pt-3 border-t border-border/60 flex items-center justify-between text-xs text-muted-foreground">
+              <span>Total dispatched qty (kg) from production events</span>
+              <span className="font-medium text-foreground">
+                {dispatchData.reduce((s, d) => s + d.value, 0).toLocaleString()} kg
+              </span>
             </div>
           </div>
         </div>

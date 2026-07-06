@@ -1,4 +1,5 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useStore } from "@/lib/store";
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -23,6 +24,22 @@ const navigationItems = [
 
 export default function Sidebar() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { currentUser, isOwnerAdmin, logout } = useStore();
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login");
+  };
+
+  // Filter items based on access
+  const visibleItems = navigationItems.filter(item => {
+    if (isOwnerAdmin()) return true;
+    if (item.label === "Scan QR") return true; // Assuming everyone can scan QR
+    if (!currentUser) return false;
+    const access = currentUser.moduleAccess.find(m => m.moduleName === item.label);
+    return access?.read === true;
+  });
 
   return (
     <div className="h-full flex flex-col bg-sidebar">
@@ -41,7 +58,7 @@ export default function Sidebar() {
 
       {/* Navigation Items */}
       <nav className="flex-1 px-3 py-5 space-y-0.5 overflow-y-auto">
-        {navigationItems.map((item) => {
+        {visibleItems.map((item) => {
           const Icon = item.icon;
           const isActive =
             item.path === "/"
@@ -82,15 +99,28 @@ export default function Sidebar() {
 
       {/* Footer Info */}
       <div className="px-4 py-4 border-t border-sidebar-border">
-        <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-full bg-sidebar-primary/20 flex items-center justify-center">
-            <span className="text-xs font-bold text-sidebar-primary">R</span>
+        {currentUser && (
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-full bg-sidebar-primary/20 flex items-center justify-center">
+                <span className="text-xs font-bold text-sidebar-primary">
+                  {currentUser.name[0]?.toUpperCase()}
+                </span>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-sidebar-accent-foreground">{currentUser.name}</p>
+                <p className="text-[10px] text-sidebar-foreground/60 leading-none mt-0.5 capitalize">{currentUser.designation}</p>
+              </div>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="p-1.5 text-sidebar-foreground/60 hover:text-sidebar-accent-foreground hover:bg-sidebar-accent rounded-md transition-colors"
+              title="Logout"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+            </button>
           </div>
-          <div>
-            <p className="text-xs font-medium text-sidebar-accent-foreground">Rajesh Kumar</p>
-            <p className="text-[10px] text-sidebar-foreground/60 leading-none mt-0.5">Owner · Admin</p>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

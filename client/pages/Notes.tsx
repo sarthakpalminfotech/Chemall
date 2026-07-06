@@ -36,7 +36,8 @@ function getNoteColor(id: string) {
 }
 
 export default function Notes() {
-  const { notes, addNote, updateNote, deleteNote } = useStore();
+  const { currentUser, notes, addNote, updateNote, deleteNote, isOwnerAdmin } = useStore();
+  const canWrite = isOwnerAdmin() || currentUser?.moduleAccess.find(m => m.moduleName === "Notes")?.write === true;
   const { toast } = useToast();
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -100,10 +101,12 @@ export default function Notes() {
               {notes.length} note{notes.length !== 1 ? "s" : ""} · personal workspace
             </p>
           </div>
-          <Button className="gap-2 shadow-sm" onClick={openNew}>
-            <Plus className="w-4 h-4" />
-            New Note
-          </Button>
+          {canWrite && (
+            <Button className="gap-2 shadow-sm" onClick={openNew}>
+              <Plus className="w-4 h-4" />
+              New Note
+            </Button>
+          )}
         </div>
       </div>
 
@@ -134,9 +137,11 @@ export default function Notes() {
             <p className="text-sm text-muted-foreground mt-1 max-w-xs">
               Use notes to jot down quick thoughts, reminders, or anything work-related.
             </p>
-            <Button className="mt-6 gap-2" onClick={openNew}>
-              <Plus className="w-4 h-4" /> Write your first note
-            </Button>
+            {canWrite && (
+              <Button className="mt-6 gap-2" onClick={openNew}>
+                <Plus className="w-4 h-4" /> Write your first note
+              </Button>
+            )}
           </div>
         ) : filteredNotes.length === 0 ? (
           <div className="empty-state">
@@ -152,13 +157,14 @@ export default function Notes() {
                   "hover:shadow-md hover:-translate-y-0.5",
                   getNoteColor(note.id)
                 )}
-                onClick={() => openEdit(note)}
+                onClick={() => { if (canWrite) openEdit(note); }}
               >
                 {/* 3-dot menu */}
-                <div
-                  className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
-                  onClick={(e) => e.stopPropagation()}
-                >
+                {canWrite && (
+                  <div
+                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button className="p-1.5 rounded-lg bg-white/70 hover:bg-white transition-colors">
@@ -179,6 +185,7 @@ export default function Notes() {
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
+                )}
 
                 {/* Content */}
                 <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap pr-6">

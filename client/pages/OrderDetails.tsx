@@ -17,7 +17,8 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function OrderDetails() {
   const { id } = useParams();
-  const { orders, products } = useStore();
+  const { currentUser, isOwnerAdmin, orders, products } = useStore();
+  const canWrite = isOwnerAdmin() || currentUser?.moduleAccess.find(m => m.moduleName === "Orders")?.write === true;
   const qrRef = useRef<HTMLCanvasElement>(null);
   const order = orders.find(o => o.id === id);
 
@@ -248,14 +249,16 @@ export default function OrderDetails() {
                 )}
 
                 {/* Actions */}
-                <div className="border-t border-border pt-4 space-y-2 print:hidden">
-                  <Button variant="outline" className="w-full">Edit Order</Button>
-                  {order.status === "pending" && (
-                    <Link to="/orders">
-                      <Button className="w-full">Mark in Production</Button>
-                    </Link>
-                  )}
-                </div>
+                {canWrite && (
+                  <div className="border-t border-border pt-4 space-y-2 print:hidden">
+                    <Button variant="outline" className="w-full">Edit Order</Button>
+                    {order.status === "pending" && (
+                      <Link to="/orders">
+                        <Button className="w-full">Mark in Production</Button>
+                      </Link>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>

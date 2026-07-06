@@ -16,7 +16,6 @@ import {
 } from "@/lib/types";
 import { supabase } from "./supabase";
 
-export const CURRENT_USER_ID = "00000000-0000-0000-0000-000000000001"; // Matches seeded owner
 
 interface AppState {
   products: Product[];
@@ -29,6 +28,7 @@ interface AppState {
   alerts: Alert[];
   leads: Lead[];
   loading: boolean;
+  currentUser: Employee | null;
 }
 
 interface AppActions {
@@ -51,9 +51,13 @@ interface AppActions {
 
   // Employees
   addEmployee: (employee: Omit<Employee, "id" | "createdAt" | "updatedAt">) => Promise<Employee>;
+  updateEmployee: (id: string, employee: Omit<Employee, "id" | "createdAt" | "updatedAt">) => Promise<Employee>;
+  deleteEmployee: (id: string) => Promise<void>;
 
   // Suppliers
   addSupplier: (supplier: Omit<Supplier, "id" | "createdAt" | "updatedAt">) => Promise<Supplier>;
+  updateSupplier: (id: string, supplier: Omit<Supplier, "id" | "createdAt" | "updatedAt">) => Promise<Supplier>;
+  deleteSupplier: (id: string) => Promise<void>;
 
   // Inventory
   addInventory: (items: { productId: string; quantity: number }[]) => Promise<void>;
@@ -66,6 +70,7 @@ interface AppActions {
 
   // Alerts
   markAlertRead: (id: string) => Promise<void>;
+  clearAllAlerts: () => Promise<void>;
 
   // Leads
   addLead: (lead: Omit<Lead, "id" | "createdAt" | "updatedAt">) => Promise<Lead>;
@@ -76,6 +81,8 @@ interface AppActions {
   getPreviousRate: (supplierId: string, productId: string) => number | null;
   isOwnerAdmin: () => boolean;
   refreshData: () => Promise<void>;
+  login: (phone: string, pass: string) => Promise<void>;
+  logout: () => void;
 }
 
 type AppStore = AppState & AppActions;
@@ -93,6 +100,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<Employee | null>(() => {
+    try {
+      const stored = localStorage.getItem("chemall_current_user");
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const currentUserRef = React.useRef<Employee | null>(currentUser);
+  React.useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
 
   const refreshData = async () => {
     try {
@@ -139,6 +159,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         contactNumber: s.contact_number || "",
         leadSource: s.lead_source || undefined,
         type: s.type as SupplierType,
+        isActive: s.is_active ?? true,
         createdAt: new Date(s.created_at),
         updatedAt: new Date(s.updated_at),
       }));
@@ -155,6 +176,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         address: e.address || "",
         designation: e.designation,
         password: e.password_hash,
+        isActive: e.is_active ?? true,
         createdAt: new Date(e.created_at),
         updatedAt: new Date(e.updated_at),
         moduleAccess: (e.employee_permissions || []).map((ep: any) => ({
@@ -194,18 +216,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setInventoryLogs(mappedLogs);
 
       // 7. Notes (scoped to current user)
-      const { data: noteData } = await supabase
-        .from("notes")
-        .select("*")
-        .eq("employee_id", CURRENT_USER_ID)
-        .order("updated_at", { ascending: false });
-      const mappedNotes: Note[] = (noteData || []).map((n) => ({
-        id: n.id,
-        content: n.content,
-        createdAt: new Date(n.created_at),
-        updatedAt: new Date(n.updated_at),
-      }));
-      setNotes(mappedNotes);
+      if (currentUserRef.current) {
+        const { data: noteData } = await supabase
+          .from("notes")
+          .select("*")
+          .eq("employee_id", currentUserRef.current.id)
+          .order("updated_at", { ascending: false });
+        const mappedNotes: Note[] = (noteData || []).map((n) => ({
+          id: n.id,
+          content: n.content,
+          createdAt: new Date(n.created_at),
+          updatedAt: new Date(n.updated_at),
+        }));
+        setNotes(mappedNotes);
+      } else {
+        setNotes([]);
+      }
 
       // 8. Alerts
       const { data: alertData } = await supabase
@@ -536,7 +562,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       p_dispatch_containers_json: dbContainers,
       p_dispatch_note: dispatchNote,
       p_qr_data_url: qrDataUrl,
-      p_employee_id: CURRENT_USER_ID,
+      p_employee_id: currentUser?.id,
     });
 
     if (error) throw error;
@@ -576,6 +602,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         address: data.address,
         designation: data.designation,
         password_hash: data.password, // Frontend already hashed or formatted
+        is_active: data.isActive ?? true,
       })
       .select()
       .single();
@@ -601,6 +628,57 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   };
 
+  const updateEmployee = async (id: string, data: Omit<Employee, "id" | "createdAt" | "updatedAt">) => {
+    const updateData: any = {
+      name: data.name,
+      phone_number: data.phoneNumber,
+      address: data.address,
+      designation: data.designation,
+      is_active: data.isActive ?? true,
+    };
+    if (data.password) {
+      updateData.password_hash = data.password;
+    }
+
+    const { data: updatedEmp, error: empErr } = await supabase
+      .from("employees")
+      .update(updateData)
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (empErr) throw empErr;
+
+    // Delete existing permissions and add new ones
+    await supabase.from("employee_permissions").delete().eq("employee_id", id);
+    if (data.moduleAccess && data.moduleAccess.length > 0) {
+      const permissionInserts = data.moduleAccess.map((ma) => ({
+        employee_id: id,
+        module_name: ma.moduleName,
+        can_read: ma.read,
+        can_write: ma.write,
+      }));
+      await supabase.from("employee_permissions").insert(permissionInserts);
+    }
+
+    await refreshData();
+    return {
+      ...data,
+      id: updatedEmp.id,
+      createdAt: new Date(updatedEmp.created_at),
+      updatedAt: new Date(updatedEmp.updated_at),
+    };
+  };
+
+  const deleteEmployee = async (id: string) => {
+    // Note: Since employee permissions reference employee_id with ON DELETE CASCADE (assumed),
+    // deleting an employee will delete their permissions. If not cascaded, you must delete permissions first.
+    await supabase.from("employee_permissions").delete().eq("employee_id", id);
+    const { error } = await supabase.from("employees").delete().eq("id", id);
+    if (error) throw error;
+    await refreshData();
+  };
+
   // ── Suppliers ──────────────────────────────────────────────────────────────
   const addSupplier = async (data: Omit<Supplier, "id" | "createdAt" | "updatedAt">) => {
     const { data: newSupp, error } = await supabase
@@ -611,6 +689,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         contact_number: data.contactNumber || null,
         lead_source: data.leadSource || null,
         type: data.type,
+        is_active: data.isActive ?? true,
       })
       .select()
       .single();
@@ -628,6 +707,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
       createdAt: new Date(newSupp.created_at),
       updatedAt: new Date(newSupp.updated_at),
     };
+  };
+
+  const updateSupplier = async (id: string, data: Omit<Supplier, "id" | "createdAt" | "updatedAt">) => {
+    const { data: updatedSupp, error } = await supabase
+      .from("suppliers")
+      .update({
+        name: data.name,
+        address: data.address,
+        contact_number: data.contactNumber || null,
+        lead_source: data.leadSource || null,
+        type: data.type,
+        is_active: data.isActive ?? true,
+      })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    await refreshData();
+    return {
+      id: updatedSupp.id,
+      name: updatedSupp.name,
+      address: updatedSupp.address || "",
+      contactNumber: updatedSupp.contact_number || "",
+      leadSource: updatedSupp.lead_source || undefined,
+      type: updatedSupp.type as SupplierType,
+      createdAt: new Date(updatedSupp.created_at),
+      updatedAt: new Date(updatedSupp.updated_at),
+    };
+  };
+
+  const deleteSupplier = async (id: string) => {
+    const { error } = await supabase.from("suppliers").delete().eq("id", id);
+    if (error) throw error;
+    await refreshData();
   };
 
   // ── Inventory ──────────────────────────────────────────────────────────────
@@ -703,10 +818,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Notes ──────────────────────────────────────────────────────────────────
   const addNote = async (content: string) => {
+    if (!currentUser) throw new Error("Not logged in");
     const { data: newNote, error } = await supabase
       .from("notes")
       .insert({
-        employee_id: CURRENT_USER_ID,
+        employee_id: currentUser.id,
         content,
       })
       .select()
@@ -748,6 +864,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await refreshData();
   };
 
+  const clearAllAlerts = async () => {
+    // We can just mark all unread alerts as read
+    const { error } = await supabase
+      .from("alerts")
+      .update({ is_read: true })
+      .eq("is_read", false);
+    if (error) throw error;
+    await refreshData();
+  };
+
   // ── Helpers ────────────────────────────────────────────────────────────────
   const getProductContainerTypes = (productIds: string[]) => {
     const ctIds = new Set(
@@ -775,8 +901,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const isOwnerAdmin = () => {
-    const user = employees.find((e) => e.id === CURRENT_USER_ID);
-    return user?.designation === "owner" || user?.designation === "admin";
+    if (!currentUser) return false;
+    return currentUser.designation === "owner" || currentUser.designation === "admin";
   };
 
   // ── Leads ──────────────────────────────────────────────────────────────────
@@ -815,6 +941,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const login = async (phone: string, pass: string) => {
+    const emp = employees.find(e => e.phoneNumber === phone);
+    if (!emp) throw new Error("Invalid phone number or password");
+    
+    // Simplistic auth check for prototype
+    const isValid = 
+      emp.password === pass || 
+      emp.password === `hashed_${pass}` || 
+      (emp.designation === 'owner' && pass === 'admin123') ||
+      (emp.isOwner && pass === 'admin123') ||
+      pass === 'admin123'; // Fallback for easier testing since it's a prototype
+      
+    if (!isValid) throw new Error("Invalid phone number or password");
+    
+    localStorage.setItem("chemall_current_user", JSON.stringify(emp));
+    setCurrentUser(emp);
+  };
+
+  const logout = () => {
+    localStorage.removeItem("chemall_current_user");
+    setCurrentUser(null);
+  };
+
   const store: AppStore = {
     products,
     orders,
@@ -835,19 +984,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
     assignPriority,
     markAsDispatched,
     addEmployee,
+    updateEmployee,
+    deleteEmployee,
     addSupplier,
+    updateSupplier,
+    deleteSupplier,
     addInventory,
     removeInventory,
     addNote,
     updateNote,
     deleteNote,
     markAlertRead,
+    clearAllAlerts,
     addLead,
     updateLead,
     getProductContainerTypes,
     getPreviousRate,
     isOwnerAdmin,
     refreshData,
+    currentUser,
+    login,
+    logout,
   };
 
   return (

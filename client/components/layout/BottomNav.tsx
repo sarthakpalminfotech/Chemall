@@ -1,4 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
+import { useStore } from "@/lib/store";
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -31,9 +32,18 @@ const navigationItems = [
 export default function BottomNav() {
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const { currentUser, isOwnerAdmin } = useStore();
 
-  const visibleItems = navigationItems.slice(0, 4);
-  const moreItems = navigationItems.slice(4);
+  const accessibleItems = navigationItems.filter(item => {
+    if (isOwnerAdmin()) return true;
+    if (item.label === "Scan QR") return true;
+    if (!currentUser) return false;
+    const access = currentUser.moduleAccess.find(m => m.moduleName === item.label);
+    return access?.read === true;
+  });
+
+  const visibleItems = accessibleItems.slice(0, 4);
+  const moreItems = accessibleItems.slice(4);
 
   const isActive = (item: typeof navigationItems[0]) =>
     item.exact ? location.pathname === item.path : location.pathname.startsWith(item.path);

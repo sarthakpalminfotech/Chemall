@@ -1,9 +1,15 @@
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
+import { useStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Upload, PlusCircle, Download } from "lucide-react";
 
 export default function OrderNew() {
+  const { currentUser, isOwnerAdmin } = useStore();
+  const canWrite = isOwnerAdmin() || currentUser?.moduleAccess.find(m => m.moduleName === "Orders")?.write === true;
+  
+  if (!canWrite) return <Navigate to="/orders" replace />;
+
   return (
     <div className="w-full h-full">
       <div className="px-4 md:px-6 py-6">

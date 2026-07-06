@@ -24,7 +24,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { LeadStatus, Lead } from "@/lib/types";
 
 export default function Leads() {
-  const { leads, products, updateLead, addSupplier } = useStore();
+  const { currentUser, leads, products, updateLead, addSupplier, isOwnerAdmin } = useStore();
+  const canWrite = isOwnerAdmin() || currentUser?.moduleAccess.find(m => m.moduleName === "Leads")?.write === true;
   const [searchTerm, setSearchTerm] = useState("");
   const navigate = useNavigate();
   
@@ -140,12 +141,14 @@ export default function Leads() {
               {filteredLeads.length} lead{filteredLeads.length !== 1 ? "s" : ""}
             </p>
           </div>
-          <Link to="/leads/new">
-            <Button className="gap-2 shadow-sm">
-              <Plus className="w-4 h-4" />
-              Add Lead
-            </Button>
-          </Link>
+          {canWrite && (
+            <Link to="/leads/new">
+              <Button className="gap-2 shadow-sm">
+                <Plus className="w-4 h-4" />
+                Add Lead
+              </Button>
+            </Link>
+          )}
         </div>
       </div>
 
@@ -214,9 +217,11 @@ export default function Leads() {
                       <span className={cn("text-[10px] font-bold uppercase tracking-wider whitespace-nowrap", intensityColors[lead.intensity])}>
                         • {lead.intensity}
                       </span>
-                      <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 -mr-1" onClick={(e) => openStatusModal(e, lead)}>
-                        <Edit2 className="w-3.5 h-3.5 text-muted-foreground" />
-                      </Button>
+                      {canWrite && (
+                        <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 -mr-1" onClick={(e) => openStatusModal(e, lead)}>
+                          <Edit2 className="w-3.5 h-3.5 text-muted-foreground" />
+                        </Button>
+                      )}
                     </div>
                   </div>
 

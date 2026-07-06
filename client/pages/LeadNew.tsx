@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, Navigate } from "react-router-dom";
 import { useStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,9 +28,11 @@ const ALL_STATUSES: LeadStatus[] = ["new", "in discussion", "paused/hold", "won"
 
 export default function LeadNew() {
   const { id } = useParams<{ id: string }>();
-  const { products, leads, addLead, updateLead } = useStore();
+  const { products, leads, addLead, updateLead, currentUser, isOwnerAdmin } = useStore();
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  const canWrite = isOwnerAdmin() || currentUser?.moduleAccess.find(m => m.moduleName === "Leads")?.write === true;
 
   const existingLead = id ? leads.find(l => l.id === id) : null;
   const [isViewMode, setIsViewMode] = useState(!!existingLead);
@@ -78,6 +80,10 @@ export default function LeadNew() {
 
   const finishedGoods = products.filter(p => p.type === "finished_good");
   const filteredProducts = finishedGoods.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()));
+
+  if (!existingLead && !canWrite) {
+    return <Navigate to="/leads" replace />;
+  }
 
   const allSources = [...DEFAULT_SOURCES, ...customSources];
 
@@ -152,7 +158,7 @@ export default function LeadNew() {
               {existingLead ? "View or update lead information" : "Enter the details of the prospective client"}
             </p>
           </div>
-          {isViewMode && (
+          {isViewMode && canWrite && (
             <Button variant="outline" className="gap-2" onClick={() => setIsViewMode(false)}>
               <Edit2 className="w-4 h-4" />
               Edit Lead

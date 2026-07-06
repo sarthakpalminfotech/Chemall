@@ -94,6 +94,7 @@ export interface Employee {
   designation: EmployeeDesignation;
   moduleAccess: ModuleAccess[];
   password: string; // Hashed in real app
+  isActive?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -108,6 +109,7 @@ export interface Supplier {
   contactNumber: string;
   leadSource?: string;
   type: SupplierType;
+  isActive?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

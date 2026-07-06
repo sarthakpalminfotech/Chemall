@@ -1,5 +1,7 @@
 import { ReactNode } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, Navigate, Link } from "react-router-dom";
+import { useStore } from "@/lib/store";
+import { useMemo } from "react";
 import Sidebar from "./Sidebar";
 import BottomNav from "./BottomNav";
 import { FlaskConical, Bell } from "lucide-react";
@@ -9,6 +11,22 @@ interface AppLayoutProps {
 }
 
 export default function AppLayout({ children }: AppLayoutProps) {
+  const { currentUser, alerts, inventory, products } = useStore();
+  
+  const unreadAlertsCount = useMemo(() => {
+    const unreadDbAlerts = alerts.filter(a => !a.read).length;
+    const lowStockCount = inventory.filter((item) => {
+      const product = products.find((p) => p.id === item.productId);
+      const threshold = product?.alertThreshold ?? 100;
+      return item.quantity < threshold;
+    }).length;
+    return unreadDbAlerts + lowStockCount;
+  }, [alerts, inventory, products]);
+
+  if (!currentUser) {
+    return <Navigate to="/login" replace />;
+  }
+
   return (
     <div className="flex h-screen bg-background">
       {/* Desktop Sidebar */}
@@ -33,13 +51,13 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
           {/* Right actions */}
           <div className="flex items-center gap-2">
-            <button className="relative w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-secondary transition-colors">
+            <Link to="/alerts" className="relative w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-secondary transition-colors">
               <Bell className="w-4.5 h-4.5" />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-destructive rounded-full" />
-            </button>
-            <div className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center">
-              <span className="text-xs font-bold text-primary">R</span>
-            </div>
+              {unreadAlertsCount > 0 && <span className="absolute top-1 right-1 w-2 h-2 bg-destructive rounded-full" />}
+            </Link>
+            <Link to="/profile" className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center overflow-hidden hover:opacity-80 transition-opacity">
+              <span className="text-xs font-bold text-primary">{currentUser?.name?.[0]?.toUpperCase()}</span>
+            </Link>
           </div>
         </header>
 

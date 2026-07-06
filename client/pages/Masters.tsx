@@ -15,7 +15,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Eye, EyeOff, Package, Users, Building2, AlertCircle, Trash2, Edit2 } from "lucide-react";
+import { Plus, Eye, EyeOff, Package, Users, Building2, AlertCircle, Trash2, Edit2, Power, MoreVertical, Search, X } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -42,7 +48,8 @@ function TypeBadge({ type }: { type: string }) {
 }
 
 export default function Masters() {
-  const { products, employees, suppliers, addProduct, updateProduct, deleteProduct, addEmployee, addSupplier } = useStore();
+  const { currentUser, products, employees, suppliers, addProduct, updateProduct, deleteProduct, addEmployee, updateEmployee, deleteEmployee, addSupplier, updateSupplier, deleteSupplier, isOwnerAdmin } = useStore();
+  const canWrite = isOwnerAdmin() || currentUser?.moduleAccess.find(m => m.moduleName === "Masters")?.write === true;
   const { toast } = useToast();
 
   // ── Product state ────────────────────────────────────────────────────────────
@@ -54,6 +61,7 @@ export default function Masters() {
 
   // ── Employee state ───────────────────────────────────────────────────────────
   const [empDialogOpen, setEmpDialogOpen] = useState(false);
+  const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
   const [empForm, setEmpForm] = useState({
     name: "", phoneNumber: "", address: "", designation: "",
     moduleAccess: MODULES.reduce((acc, m) => ({ ...acc, [m]: { read: false, write: false } }), {} as Record<string, { read: boolean; write: boolean }>),
@@ -63,14 +71,20 @@ export default function Masters() {
 
   // ── Supplier state ───────────────────────────────────────────────────────────
   const [suppDialogOpen, setSuppDialogOpen] = useState(false);
+  const [editingSupplierId, setEditingSupplierId] = useState<string | null>(null);
   const [suppForm, setSuppForm] = useState({ name: "", address: "", contactNumber: "", leadSource: "", type: "customer" });
   const [newTypeDialogOpen, setNewTypeDialogOpen] = useState(false);
   const [newTypeName, setNewTypeName] = useState("");
   const [customTypes, setCustomTypes] = useState<string[]>([]);
+  const [supplierTypeFilter, setSupplierTypeFilter] = useState<string>("all");
   
   const [newUnitDialogOpen, setNewUnitDialogOpen] = useState(false);
   const [newUnitName, setNewUnitName] = useState("");
   const [customUnits, setCustomUnits] = useState<string[]>([]);
+
+  // ── Search state ─────────────────────────────────────────────────────────────
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
 
   // ── Product handlers ─────────────────────────────────────────────────────────
   const handleSaveProduct = async () => {
@@ -145,7 +159,8 @@ export default function Masters() {
 
 
   // ── Employee handlers ────────────────────────────────────────────────────────
-  const validatePass = (p: string) => {
+  const validatePass = (p: string, isEdit: boolean) => {
+    if (isEdit && !p) return "";
     if (p.length < 8) return "Minimum 8 characters";
     if (!/\d/.test(p)) return "At least 1 number required";
     if (!/[a-zA-Z]/.test(p)) return "At least 1 letter required";
@@ -153,24 +168,46 @@ export default function Masters() {
   };
 
   const handleAddEmployee = async () => {
-    const passErr = validatePass(empForm.password);
+    const isOwner = empForm.designation.toLowerCase() === "owner";
+    const passErr = validatePass(empForm.password, !!editingEmployeeId);
     if (passErr) { setPasswordError(passErr); return; }
-    if (empForm.password !== empForm.confirmPassword) { setPasswordError("Passwords do not match"); return; }
+    if (empForm.password || !editingEmployeeId) {
+      if (empForm.password !== empForm.confirmPassword) { setPasswordError("Passwords do not match"); return; }
+    }
     if (!empForm.name.trim() || !empForm.phoneNumber.trim()) return;
-    const dupPhone = employees.find(e => e.phoneNumber === empForm.phoneNumber.trim());
+    
+    // Only check for duplicate phone number if we are adding a new employee, or editing and changing the phone number
+    const dupPhone = employees.find(e => e.phoneNumber === empForm.phoneNumber.trim() && e.id !== editingEmployeeId);
     if (dupPhone) { setPasswordError("Phone number already in use"); return; }
 
+    const finalModuleAccess = isOwner 
+      ? MODULES.map(m => ({ moduleName: m, read: true, write: true })) 
+      : MODULES.map(m => ({ moduleName: m, ...empForm.moduleAccess[m] }));
+
     try {
-      await addEmployee({
-        name: empForm.name.trim(),
-        phoneNumber: empForm.phoneNumber.trim(),
-        address: empForm.address,
-        designation: empForm.designation,
-        moduleAccess: MODULES.map(m => ({ moduleName: m, ...empForm.moduleAccess[m] })),
-        password: `hashed_${empForm.password}`,
-      });
-      toast({ title: "Employee added" });
+      if (editingEmployeeId) {
+        await updateEmployee(editingEmployeeId, {
+          name: empForm.name.trim(),
+          phoneNumber: empForm.phoneNumber.trim(),
+          address: empForm.address,
+          designation: empForm.designation,
+          moduleAccess: finalModuleAccess,
+          password: empForm.password ? `hashed_${empForm.password}` : "",
+        });
+        toast({ title: "Employee updated" });
+      } else {
+        await addEmployee({
+          name: empForm.name.trim(),
+          phoneNumber: empForm.phoneNumber.trim(),
+          address: empForm.address,
+          designation: empForm.designation,
+          moduleAccess: finalModuleAccess,
+          password: `hashed_${empForm.password}`,
+        });
+        toast({ title: "Employee added" });
+      }
       setEmpDialogOpen(false);
+      setEditingEmployeeId(null);
       setEmpForm({ name: "", phoneNumber: "", address: "", designation: "", moduleAccess: MODULES.reduce((acc, m) => ({ ...acc, [m]: { read: false, write: false } }), {}), password: "", confirmPassword: "", showPassword: false });
       setPasswordError("");
     } catch (err: any) {
@@ -178,17 +215,130 @@ export default function Masters() {
     }
   };
 
+  const openAddEmployeeModal = () => {
+    setEditingEmployeeId(null);
+    setEmpForm({ name: "", phoneNumber: "", address: "", designation: "", moduleAccess: MODULES.reduce((acc, m) => ({ ...acc, [m]: { read: false, write: false } }), {}), password: "", confirmPassword: "", showPassword: false });
+    setPasswordError("");
+    setEmpDialogOpen(true);
+  };
+
+  const handleEditEmployeeClick = (employee: Employee) => {
+    setEditingEmployeeId(employee.id);
+    const modAcc = MODULES.reduce((acc, m) => {
+      const p = employee.moduleAccess.find(ma => ma.moduleName === m);
+      return { ...acc, [m]: { read: p?.read || false, write: p?.write || false } };
+    }, {});
+    
+    setEmpForm({
+      name: employee.name,
+      phoneNumber: employee.phoneNumber,
+      address: employee.address || "",
+      designation: employee.designation || "",
+      moduleAccess: modAcc as any,
+      password: "",
+      confirmPassword: "",
+      showPassword: false
+    });
+    setPasswordError("");
+    setEmpDialogOpen(true);
+  };
+
+  const handleDeleteEmployee = async (employee: Employee) => {
+    if (employee.designation.toLowerCase() === "owner") {
+      toast({ title: "Cannot delete owner", variant: "destructive" });
+      return;
+    }
+    if (!confirm(`Are you sure you want to delete employee ${employee.name}?`)) return;
+    try {
+      await deleteEmployee(employee.id);
+      toast({ title: "Employee deleted" });
+    } catch (err: any) {
+      toast({ title: "Error deleting employee", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleToggleEmployeeStatus = async (employee: Employee) => {
+    if (employee.designation.toLowerCase() === "owner" && employee.isActive !== false) {
+      toast({ title: "Cannot deactivate owner", variant: "destructive" });
+      return;
+    }
+    try {
+      await updateEmployee(employee.id, {
+        name: employee.name,
+        phoneNumber: employee.phoneNumber,
+        address: employee.address,
+        designation: employee.designation,
+        moduleAccess: employee.moduleAccess,
+        password: "",
+        isActive: !(employee.isActive ?? true),
+      });
+      toast({ title: `Employee ${employee.isActive !== false ? "deactivated" : "activated"}` });
+    } catch (err: any) {
+      toast({ title: "Error toggling status", description: err.message, variant: "destructive" });
+    }
+  };
+
   // ── Supplier handlers ────────────────────────────────────────────────────────
   const handleAddSupplier = async () => {
     if (!suppForm.name.trim()) return;
     try {
-      await addSupplier({ name: suppForm.name.trim(), address: suppForm.address, contactNumber: suppForm.contactNumber, leadSource: suppForm.leadSource, type: suppForm.type });
-      toast({ title: "Supplier added" });
+      if (editingSupplierId) {
+        await updateSupplier(editingSupplierId, { name: suppForm.name.trim(), address: suppForm.address, contactNumber: suppForm.contactNumber, leadSource: suppForm.leadSource, type: suppForm.type });
+        toast({ title: "Supplier updated" });
+      } else {
+        await addSupplier({ name: suppForm.name.trim(), address: suppForm.address, contactNumber: suppForm.contactNumber, leadSource: suppForm.leadSource, type: suppForm.type });
+        toast({ title: "Supplier added" });
+      }
       setSuppDialogOpen(false);
+      setEditingSupplierId(null);
       setSuppForm({ name: "", address: "", contactNumber: "", leadSource: "", type: "customer" });
     } catch (err: any) {
-      toast({ title: "Error adding supplier", description: err.message, variant: "destructive" });
+      toast({ title: "Error saving supplier", description: err.message, variant: "destructive" });
     }
+  };
+
+  const openAddSupplierModal = () => {
+    setEditingSupplierId(null);
+    setSuppForm({ name: "", address: "", contactNumber: "", leadSource: "", type: "customer" });
+    setSuppDialogOpen(true);
+  };
+
+  const handleDeleteSupplier = async (supplier: Supplier) => {
+    if (!confirm(`Are you sure you want to delete supplier ${supplier.name}?`)) return;
+    try {
+      await deleteSupplier(supplier.id);
+      toast({ title: "Supplier deleted" });
+    } catch (err: any) {
+      toast({ title: "Error deleting supplier", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleToggleSupplierStatus = async (supplier: Supplier) => {
+    try {
+      await updateSupplier(supplier.id, {
+        name: supplier.name,
+        address: supplier.address,
+        contactNumber: supplier.contactNumber,
+        leadSource: supplier.leadSource,
+        type: supplier.type,
+        isActive: !(supplier.isActive ?? true),
+      });
+      toast({ title: `Supplier ${supplier.isActive !== false ? "deactivated" : "activated"}` });
+    } catch (err: any) {
+      toast({ title: "Error toggling status", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleEditSupplierClick = (supplier: Supplier) => {
+    setEditingSupplierId(supplier.id);
+    setSuppForm({
+      name: supplier.name,
+      address: supplier.address || "",
+      contactNumber: supplier.contactNumber || "",
+      leadSource: supplier.leadSource || "",
+      type: supplier.type || "customer"
+    });
+    setSuppDialogOpen(true);
   };
 
   const handleAddCustomType = () => {
@@ -207,13 +357,64 @@ export default function Masters() {
     setNewUnitDialogOpen(false);
   };
 
-  const filteredProducts = products.filter(p => p.type === productFilter);
+  const filteredProducts = products.filter(p => 
+    p.type === productFilter && 
+    p.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <div className="w-full">
-      <div className="px-4 md:px-6 pt-6 pb-4">
-        <h1 className="text-2xl font-bold text-foreground tracking-tight">Masters</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Manage core business data</p>
+      <div className="px-4 md:px-6 pt-6 pb-4 flex items-center justify-between relative">
+        <div className="shrink-0">
+          <h1 className="text-2xl font-bold text-foreground tracking-tight">Masters</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Manage core business data</p>
+        </div>
+        
+        <div className="flex-1 flex justify-end">
+          <div className="relative flex items-center justify-end">
+            {/* Desktop search is always visible */}
+            <div className="hidden md:flex relative items-center w-64">
+              <Search className="w-4 h-4 text-muted-foreground absolute left-3" />
+              <Input 
+                placeholder="Search by name..." 
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="pl-9 pr-8 w-full" 
+              />
+              {searchQuery && (
+                <Button variant="ghost" size="icon" className="absolute right-1 w-7 h-7" onClick={() => setSearchQuery("")}>
+                  <X className="w-4 h-4 text-muted-foreground" />
+                </Button>
+              )}
+            </div>
+
+            {/* Mobile search logic */}
+            <div className="md:hidden flex items-center">
+              {!isSearchExpanded ? (
+                <Button variant="ghost" size="icon" onClick={() => setIsSearchExpanded(true)}>
+                  <Search className="w-5 h-5 text-muted-foreground" />
+                </Button>
+              ) : (
+                <div className="relative flex items-center w-36 sm:w-48 animate-in fade-in slide-in-from-right-2 duration-200">
+                  <Search className="w-4 h-4 text-muted-foreground absolute left-3" />
+                  <Input 
+                    placeholder="Search..." 
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="pl-9 pr-8 w-full" 
+                    autoFocus
+                  />
+                  <Button variant="ghost" size="icon" className="absolute right-1 w-7 h-7" onClick={() => {
+                    setSearchQuery("");
+                    setIsSearchExpanded(false);
+                  }}>
+                    <X className="w-4 h-4 text-muted-foreground" />
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="px-4 md:px-6 pb-8">
@@ -228,18 +429,19 @@ export default function Masters() {
           <TabsContent value="products" className="space-y-5">
             <div className="flex items-center justify-between">
               <h2 className="section-title">Product Master</h2>
-              <Dialog open={productDialogOpen} onOpenChange={(open) => {
-                setProductDialogOpen(open);
-                if (!open) {
-                  setEditingProductId(null);
-                  setProductForm({ name: "", type: "finished_good", containerTypeIds: [], alertThreshold: 100, isContainer: false, capacity: "", unit: "kg" });
-                }
-              }}>
-                <DialogTrigger asChild>
-                  <Button className="gap-2 shadow-sm" onClick={openAddProductModal}>
-                    <Plus className="w-4 h-4" /> Add Product
-                  </Button>
-                </DialogTrigger>
+              {canWrite && (
+                <Dialog open={productDialogOpen} onOpenChange={(open) => {
+                  setProductDialogOpen(open);
+                  if (!open) {
+                    setEditingProductId(null);
+                    setProductForm({ name: "", type: "finished_good", containerTypeIds: [], alertThreshold: 100, isContainer: false, capacity: "", unit: "kg" });
+                  }
+                }}>
+                  <DialogTrigger asChild>
+                    <Button className="gap-2 shadow-sm" onClick={openAddProductModal}>
+                      <Plus className="w-4 h-4" /> Add Product
+                    </Button>
+                  </DialogTrigger>
                 <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
                   <DialogHeader><DialogTitle>{editingProductId ? "Edit Product" : "Add New Product"}</DialogTitle></DialogHeader>
                   <div className="space-y-5">
@@ -345,6 +547,7 @@ export default function Masters() {
                   </div>
                 </DialogContent>
               </Dialog>
+              )}
             </div>
 
             <Tabs value={productFilter} onValueChange={v => setProductFilter(v as ProductType)}>
@@ -362,14 +565,16 @@ export default function Masters() {
                   <div key={p.id} className="card-elevated p-4 hover:border-primary/30 transition-colors">
                     <div className="flex items-start justify-between mb-2">
                       <h3 className="font-semibold text-foreground text-sm leading-snug">{p.name}</h3>
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => handleEditProductClick(p)} className="text-muted-foreground hover:text-primary hover:bg-primary/10 p-1.5 rounded transition-colors" title="Edit Product">
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button onClick={() => handleDeleteProduct(p.id)} className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 p-1.5 rounded transition-colors" title="Delete Product">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      {canWrite && (
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => handleEditProductClick(p)} className="text-muted-foreground hover:text-primary hover:bg-primary/10 p-1.5 rounded transition-colors" title="Edit Product">
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={() => handleDeleteProduct(p.id)} className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 p-1.5 rounded transition-colors" title="Delete Product">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground mb-3">
                       <span>{p.type === "finished_good" ? "Finished Good" : "Raw Material"}</span>
@@ -407,12 +612,19 @@ export default function Masters() {
           <TabsContent value="employees" className="space-y-5">
             <div className="flex items-center justify-between">
               <h2 className="section-title">Employee Master</h2>
-              <Dialog open={empDialogOpen} onOpenChange={setEmpDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button className="gap-2 shadow-sm"><Plus className="w-4 h-4" /> Add Employee</Button>
-                </DialogTrigger>
+              {canWrite && (
+                <Dialog open={empDialogOpen} onOpenChange={(open) => {
+                  setEmpDialogOpen(open);
+                  if (!open) {
+                    setEditingEmployeeId(null);
+                    setEmpForm({ name: "", phoneNumber: "", address: "", designation: "", moduleAccess: MODULES.reduce((acc, m) => ({ ...acc, [m]: { read: false, write: false } }), {}), password: "", confirmPassword: "", showPassword: false });
+                  }
+                }}>
+                  <DialogTrigger asChild>
+                    <Button className="gap-2 shadow-sm" onClick={openAddEmployeeModal}><Plus className="w-4 h-4" /> Add Employee</Button>
+                  </DialogTrigger>
                 <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                  <DialogHeader><DialogTitle>Add New Employee</DialogTitle></DialogHeader>
+                  <DialogHeader><DialogTitle>{editingEmployeeId ? "Edit Employee" : "Add New Employee"}</DialogTitle></DialogHeader>
                   <div className="space-y-5">
                     <div className="pb-4 border-b border-border">
                       <h3 className="text-sm font-semibold text-foreground mb-3">Basic Details</h3>
@@ -434,7 +646,20 @@ export default function Masters() {
                           <div key={mod} className="grid grid-cols-3 gap-2 items-center py-1.5 rounded-lg hover:bg-secondary/50 px-1">
                             <span className="text-sm font-medium">{mod}</span>
                             <Checkbox checked={empForm.moduleAccess[mod]?.read} onCheckedChange={v => setEmpForm(f => ({ ...f, moduleAccess: { ...f.moduleAccess, [mod]: { ...f.moduleAccess[mod], read: v as boolean } } }))} />
-                            <Checkbox checked={empForm.moduleAccess[mod]?.write} onCheckedChange={v => setEmpForm(f => ({ ...f, moduleAccess: { ...f.moduleAccess, [mod]: { ...f.moduleAccess[mod], write: v as boolean } } }))} />
+                            <Checkbox checked={empForm.moduleAccess[mod]?.write} onCheckedChange={v => {
+                              const isChecked = v as boolean;
+                              setEmpForm(f => ({ 
+                                ...f, 
+                                moduleAccess: { 
+                                  ...f.moduleAccess, 
+                                  [mod]: { 
+                                    ...f.moduleAccess[mod], 
+                                    write: isChecked,
+                                    read: isChecked ? true : f.moduleAccess[mod]?.read 
+                                  } 
+                                } 
+                              }));
+                            }} />
                           </div>
                         ))}
                       </div>
@@ -460,15 +685,16 @@ export default function Masters() {
 
                     <div className="flex gap-2 pt-2 border-t border-border">
                       <Button variant="outline" className="flex-1" onClick={() => setEmpDialogOpen(false)}>Cancel</Button>
-                      <Button className="flex-1" onClick={handleAddEmployee}>Add Employee</Button>
+                      <Button className="flex-1" onClick={handleAddEmployee}>{editingEmployeeId ? "Update Employee" : "Add Employee"}</Button>
                     </div>
                   </div>
                 </DialogContent>
               </Dialog>
+              )}
             </div>
 
             <div className="space-y-2.5">
-              {employees.map(emp => (
+              {employees.filter(e => e.name.toLowerCase().includes(searchQuery.toLowerCase())).map(emp => (
                 <div key={emp.id} className="card-elevated p-4 flex items-start justify-between">
                   <div>
                     <div className="flex items-center gap-2.5 mb-1">
@@ -487,11 +713,31 @@ export default function Masters() {
                       ))}
                     </div>
                   </div>
-                  {(emp.designation === "owner" || emp.designation === "admin") && (
-                    <span className="text-[10px] px-2 py-1 bg-warning/10 text-warning rounded-full font-semibold border border-warning/20">
-                      {emp.designation === "owner" ? "Owner" : "Admin"}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-3 shrink-0">
+                    {emp.isActive === false && (
+                      <span className="text-[10px] px-2 py-1 bg-destructive/10 text-destructive rounded-full font-semibold border border-destructive/20 whitespace-nowrap">
+                        Inactive
+                      </span>
+                    )}
+                    {(emp.designation === "owner" || emp.designation === "admin") && (
+                      <span className="text-[10px] px-2 py-1 bg-warning/10 text-warning rounded-full font-semibold border border-warning/20 whitespace-nowrap">
+                        {emp.designation === "owner" ? "Owner" : "Admin"}
+                      </span>
+                    )}
+                    {canWrite && (
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => handleToggleEmployeeStatus(emp)} className={cn("p-1.5 rounded transition-colors", emp.isActive !== false ? "text-muted-foreground hover:text-destructive hover:bg-destructive/10" : "text-muted-foreground hover:text-success hover:bg-success/10")} title={emp.isActive !== false ? "Deactivate Employee" : "Activate Employee"}>
+                          <Power className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={() => handleEditEmployeeClick(emp)} className="text-muted-foreground hover:text-primary hover:bg-primary/10 p-1.5 rounded transition-colors" title="Edit Employee">
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={() => handleDeleteEmployee(emp)} className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 p-1.5 rounded transition-colors" title="Delete Employee">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -499,14 +745,34 @@ export default function Masters() {
 
           {/* ─── SUPPLIERS ─────────────────────────────────────────────────────── */}
           <TabsContent value="suppliers" className="space-y-5">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <h2 className="section-title">Supplier Master</h2>
-              <Dialog open={suppDialogOpen} onOpenChange={setSuppDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button className="gap-2 shadow-sm"><Plus className="w-4 h-4" /> Add Supplier</Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-md">
-                  <DialogHeader><DialogTitle>Add New Supplier</DialogTitle></DialogHeader>
+              <div className="flex items-center gap-3">
+                <Select value={supplierTypeFilter} onValueChange={setSupplierTypeFilter}>
+                  <SelectTrigger className="w-[140px] sm:w-[160px] h-9">
+                    <SelectValue placeholder="Filter by type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="customer">Customer</SelectItem>
+                    <SelectItem value="agent">Agent</SelectItem>
+                    <SelectItem value="raw_material_supplier">Raw Material Supplier</SelectItem>
+                    {customTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                {canWrite && (
+                  <Dialog open={suppDialogOpen} onOpenChange={(open) => {
+                    setSuppDialogOpen(open);
+                    if (!open) {
+                      setEditingSupplierId(null);
+                      setSuppForm({ name: "", address: "", contactNumber: "", leadSource: "", type: "customer" });
+                    }
+                  }}>
+                    <DialogTrigger asChild>
+                      <Button className="gap-2 shadow-sm h-9" onClick={openAddSupplierModal}><Plus className="w-4 h-4" /> Add</Button>
+                    </DialogTrigger>
+                  <DialogContent className="max-w-md">
+                  <DialogHeader><DialogTitle>{editingSupplierId ? "Edit Supplier" : "Add New Supplier"}</DialogTitle></DialogHeader>
                   <div className="space-y-4">
                     <div><Label className="field-label">Name *</Label><Input value={suppForm.name} onChange={e => setSuppForm(f => ({ ...f, name: e.target.value }))} placeholder="Supplier name" /></div>
                     <div><Label className="field-label">Address</Label><Input value={suppForm.address} onChange={e => setSuppForm(f => ({ ...f, address: e.target.value }))} placeholder="Address" /></div>
@@ -543,22 +809,52 @@ export default function Masters() {
                     </div>
                     <div className="flex gap-2 pt-2 border-t border-border">
                       <Button variant="outline" className="flex-1" onClick={() => setSuppDialogOpen(false)}>Cancel</Button>
-                      <Button className="flex-1" onClick={handleAddSupplier} disabled={!suppForm.name.trim()}>Add Supplier</Button>
+                      <Button className="flex-1" onClick={handleAddSupplier} disabled={!suppForm.name.trim()}>{editingSupplierId ? "Update Supplier" : "Add Supplier"}</Button>
                     </div>
                   </div>
                 </DialogContent>
               </Dialog>
+              )}
+              </div>
             </div>
 
+
             <div className="space-y-2.5">
-              {suppliers.map(s => (
+              {suppliers.filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase()) && (supplierTypeFilter === "all" || s.type === supplierTypeFilter)).map(s => (
                 <div key={s.id} className="card-elevated p-4">
                   <div className="flex items-start justify-between mb-2">
                     <div>
                       <p className="font-semibold text-foreground">{s.name}</p>
                       {s.address && <p className="text-xs text-muted-foreground mt-0.5">{s.address}</p>}
                     </div>
-                    <TypeBadge type={s.type} />
+                    <div className="flex items-center gap-3 shrink-0">
+                      {s.isActive === false && (
+                        <span className="text-[10px] px-2 py-1 bg-destructive/10 text-destructive rounded-full font-semibold border border-destructive/20 whitespace-nowrap">
+                          Inactive
+                        </span>
+                      )}
+                      <TypeBadge type={s.type} />
+                      {canWrite && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button className="text-muted-foreground hover:bg-secondary p-1.5 rounded transition-colors" title="Options">
+                              <MoreVertical className="w-4 h-4" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-40">
+                            <DropdownMenuItem onClick={() => handleEditSupplierClick(s)} className="cursor-pointer gap-2">
+                              <Edit2 className="w-4 h-4" /> Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleToggleSupplierStatus(s)} className={cn("cursor-pointer gap-2", s.isActive !== false ? "text-destructive" : "text-success")}>
+                              <Power className="w-4 h-4" /> {s.isActive !== false ? "Deactivate" : "Activate"}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleDeleteSupplier(s)} className="cursor-pointer gap-2 text-destructive">
+                              <Trash2 className="w-4 h-4" /> Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </div>
                   </div>
                   <div className="flex flex-wrap gap-3 text-xs text-muted-foreground mt-2">
                     {s.contactNumber && <span>📞 {s.contactNumber}</span>}

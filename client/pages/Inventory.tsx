@@ -34,7 +34,8 @@ interface AddItem {
 
 
 export default function Inventory() {
-  const { products, inventory, inventoryLogs, addInventory, removeInventory } = useStore();
+  const { currentUser, products, inventory, inventoryLogs, addInventory, removeInventory, isOwnerAdmin } = useStore();
+  const canWrite = isOwnerAdmin() || currentUser?.moduleAccess.find(m => m.moduleName === "Inventory")?.write === true;
   const { toast } = useToast();
 
   const [productFilter, setProductFilter] = useState<ProductType>("finished_good");
@@ -133,10 +134,11 @@ export default function Inventory() {
             </Link>
 
             {/* Add Inventory */}
-            <Dialog open={addDialogOpen} onOpenChange={open => { setAddDialogOpen(open); if (!open) setAddItems([{ productId: "", quantity: 0 }]); }}>
-              <DialogTrigger asChild>
-                <Button className="gap-2 shadow-sm"><Plus className="w-4 h-4" /> Add Inventory</Button>
-              </DialogTrigger>
+            {canWrite && (
+              <Dialog open={addDialogOpen} onOpenChange={open => { setAddDialogOpen(open); if (!open) setAddItems([{ productId: "", quantity: 0 }]); }}>
+                <DialogTrigger asChild>
+                  <Button className="gap-2 shadow-sm"><Plus className="w-4 h-4" /> Add Inventory</Button>
+                </DialogTrigger>
               <DialogContent className="max-w-md">
                 <DialogHeader><DialogTitle>Add Inventory</DialogTitle></DialogHeader>
                 <div className="space-y-4">
@@ -197,6 +199,7 @@ export default function Inventory() {
                 </div>
               </DialogContent>
             </Dialog>
+            )}
 
             {/* Remove Inventory */}
             <Dialog open={removeDialogOpen} onOpenChange={setRemoveDialogOpen}>
@@ -326,14 +329,16 @@ export default function Inventory() {
                       <p className="text-xs text-muted-foreground mb-1">Product</p>
                       <h3 className="font-semibold text-foreground text-sm leading-snug mb-4">{item.productName}</h3>
                     </div>
-                    <div className="flex items-center gap-1 mt-1">
-                      <Button variant="outline" size="icon" className="w-7 h-7 bg-card hover:bg-destructive/10 hover:text-destructive border-border" onClick={() => handleRemoveClick(item.productId)}>
-                        <Minus className="w-3.5 h-3.5" />
-                      </Button>
-                      <Button variant="outline" size="icon" className="w-7 h-7 bg-card hover:bg-primary/10 hover:text-primary border-border" onClick={() => handleAddClick(item.productId, item.productType)}>
-                        <Plus className="w-3.5 h-3.5" />
-                      </Button>
-                    </div>
+                    {canWrite && (
+                      <div className="flex items-center gap-1 mt-1">
+                        <Button variant="outline" size="icon" className="w-7 h-7 bg-card hover:bg-destructive/10 hover:text-destructive border-border" onClick={() => handleRemoveClick(item.productId)}>
+                          <Minus className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button variant="outline" size="icon" className="w-7 h-7 bg-card hover:bg-primary/10 hover:text-primary border-border" onClick={() => handleAddClick(item.productId, item.productType)}>
+                          <Plus className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    )}
                   </div>
 
                   <div className={cn("rounded-xl p-4 text-center", isNegative ? "bg-destructive/10" : isLow ? "bg-warning/10" : "bg-secondary")}>

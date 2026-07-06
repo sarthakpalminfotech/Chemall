@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Link, useNavigate, useLocation } from "react-router-dom";
+import { Link, useNavigate, useLocation, Navigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,10 +42,13 @@ function currencySymbol(c: string) {
 }
 
 export default function OrderManual() {
-  const { products, suppliers, addOrder, addSupplier, getPreviousRate } = useStore();
+  const { currentUser, isOwnerAdmin, products, suppliers, addOrder, addSupplier, getPreviousRate } = useStore();
   const { toast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
+  
+  const canWrite = isOwnerAdmin() || currentUser?.moduleAccess.find(m => m.moduleName === "Orders")?.write === true;
+  if (!canWrite) return <Navigate to="/orders" replace />;
   const importedOrder = location.state?.importedOrder;
   const prefillCustomerId = location.state?.customerId;
   const prefillProductIds = location.state?.productIds as string[];

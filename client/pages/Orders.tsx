@@ -88,9 +88,11 @@ function PriorityBadge({ priority }: { priority: number }) {
 
 export default function Orders() {
   const navigate = useNavigate();
-  const { orders, products, markInProduction, assignPriority, markAsDispatched, isOwnerAdmin } = useStore();
+  const { currentUser, orders, products, markInProduction, assignPriority, markAsDispatched, isOwnerAdmin } = useStore();
   const { toast } = useToast();
   const qrRef = useRef<HTMLCanvasElement>(null);
+
+  const canWrite = isOwnerAdmin() || currentUser?.moduleAccess.find(m => m.moduleName === "Orders")?.write === true;
 
   const [searchTerm, setSearchTerm] = useState("");
   const [filterDialogOpen, setFilterDialogOpen] = useState(false);
@@ -416,12 +418,14 @@ export default function Orders() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Link to="/orders/new">
-              <Button className="gap-2 shadow-sm">
-                <Plus className="w-4 h-4" />
-                Add Order
-              </Button>
-            </Link>
+            {canWrite && (
+              <Link to="/orders/new">
+                <Button className="gap-2 shadow-sm">
+                  <Plus className="w-4 h-4" />
+                  Add Order
+                </Button>
+              </Link>
+            )}
           </div>
         </div>
       </div>
@@ -568,7 +572,7 @@ export default function Orders() {
                   </div>
 
                   <div className="flex items-center gap-1 flex-shrink-0">
-                    {order.status === "pending" && (
+                    {canWrite && order.status === "pending" && (
                       <button 
                         onClick={(e) => {
                           e.stopPropagation();
@@ -580,7 +584,7 @@ export default function Orders() {
                         <Factory className="w-4 h-4" />
                       </button>
                     )}
-                    {order.status === "in_production" && (
+                    {canWrite && order.status === "in_production" && (
                       <button 
                         onClick={async (e) => {
                           e.stopPropagation();
@@ -612,9 +616,11 @@ export default function Orders() {
                               <Eye className="w-4 h-4" /> View Details
                             </Link>
                           </DropdownMenuItem>
-                          <DropdownMenuItem className="cursor-pointer gap-2">
-                            <Edit2 className="w-4 h-4" /> Edit
-                          </DropdownMenuItem>
+                          {canWrite && (
+                            <DropdownMenuItem className="cursor-pointer gap-2">
+                              <Edit2 className="w-4 h-4" /> Edit
+                            </DropdownMenuItem>
+                          )}
                           {isOwnerAdmin() && order.status === "pending" && (
                             <>
                               <DropdownMenuSeparator />

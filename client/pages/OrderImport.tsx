@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, Navigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ArrowLeft, Sparkles, Loader2 } from "lucide-react";
@@ -10,7 +10,10 @@ export default function OrderImport() {
   const [isParsing, setIsParsing] = useState(false);
   
   const navigate = useNavigate();
-  const { suppliers, products } = useStore();
+  const { currentUser, isOwnerAdmin, suppliers, products } = useStore();
+
+  const canWrite = isOwnerAdmin() || currentUser?.moduleAccess.find(m => m.moduleName === "Orders")?.write === true;
+  if (!canWrite) return <Navigate to="/orders" replace />;
 
   const parseOrderText = (text: string) => {
     const t = text.toLowerCase();
