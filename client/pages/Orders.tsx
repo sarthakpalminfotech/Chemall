@@ -44,11 +44,13 @@ import {
   Flag,
   Truck,
   Eye,
+  Mic,
+  Camera,
 } from "lucide-react";
 import { formatDate } from "date-fns";
 import { QRCodeSVG, QRCodeCanvas } from "qrcode.react";
 import { useToast } from "@/hooks/use-toast";
-import { cn } from "@/lib/utils";
+import { cn, handleAudioCapture, handleCameraCapture } from "@/lib/utils";
 
 // ─── Status + Priority Badges ──────────────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
@@ -198,7 +200,7 @@ export default function Orders() {
       const fullProd = products.find((prod) => prod.id === p.productId);
       const allowedCtIds = fullProd?.containerTypes || [];
       const allowedCts = products.filter((ct) => allowedCtIds.includes(ct.id) && ct.capacity && ct.capacity > 0);
-      const targetCts = allowedCts.length > 0 ? allowedCts : products.filter(ct => ct.type === "raw_material" && ct.isContainer && ct.capacity && ct.capacity > 0);
+      const targetCts = allowedCts;
       
       if (targetCts.length > 0) {
         const sortedCts = [...targetCts].sort((a, b) => b.capacity - a.capacity);
@@ -743,7 +745,7 @@ export default function Orders() {
                       const fullProd = products.find((prod) => prod.id === p.productId);
                       const allowedCtIds = fullProd?.containerTypes || [];
                       const productCts = products.filter((ct) => allowedCtIds.includes(ct.id) && ct.capacity && ct.capacity > 0);
-                      const targetCts = productCts.length > 0 ? productCts : products.filter((ct) => ct.type === "raw_material" && ct.isContainer && ct.capacity && ct.capacity > 0);
+                      const targetCts = productCts;
                       
                       const allocations = productionData.dispatchContainers.filter(dc => dc.productId === p.productId);
                       const totalCovered = allocations.reduce((sum, dc) => {
@@ -772,7 +774,9 @@ export default function Orders() {
                           </div>
 
                           <div className="space-y-2">
-                            {targetCts.map((ct) => {
+                            {targetCts.length === 0 ? (
+                              <p className="text-xs text-destructive bg-destructive/10 p-2 rounded-md text-center">No containers configured in Product Master.</p>
+                            ) : targetCts.map((ct) => {
                               const allocation = allocations.find(a => a.containerTypeId === ct.id);
                               const isChecked = !!allocation;
                               const count = allocation?.quantity || 0;
@@ -867,13 +871,33 @@ export default function Orders() {
               {!qrConfirmed && (
                 <div>
                   <Label className="field-label">Dispatch Note (optional)</Label>
-                  <textarea
-                    value={productionData.dispatchNote}
-                    onChange={(e) => setProductionData({ ...productionData, dispatchNote: e.target.value })}
-                    placeholder="Add any dispatch notes..."
-                    rows={3}
-                    className="w-full px-3 py-2 border border-border rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-                  />
+                  <div className="relative">
+                    <textarea
+                      value={productionData.dispatchNote}
+                      onChange={(e) => setProductionData({ ...productionData, dispatchNote: e.target.value })}
+                      placeholder="Add any dispatch notes..."
+                      rows={3}
+                      className="w-full px-3 py-2 border border-border rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring pb-10"
+                    />
+                    <div className="absolute bottom-2 left-2 flex items-center gap-2">
+                      <Button type="button" variant="secondary" size="icon" className="w-8 h-8 rounded-full" onClick={() => {
+                        handleAudioCapture((file) => {
+                          setProductionData(prev => ({ ...prev, dispatchNote: prev.dispatchNote ? prev.dispatchNote + `\n[Audio attached: ${file.name}]` : `[Audio attached: ${file.name}]` }));
+                          toast({ title: "Audio attached", description: "Audio reference added to dispatch note." });
+                        });
+                      }}>
+                        <Mic className="w-4 h-4" />
+                      </Button>
+                      <Button type="button" variant="secondary" size="icon" className="w-8 h-8 rounded-full" onClick={() => {
+                        handleCameraCapture((file) => {
+                          setProductionData(prev => ({ ...prev, dispatchNote: prev.dispatchNote ? prev.dispatchNote + `\n[Image attached: ${file.name}]` : `[Image attached: ${file.name}]` }));
+                          toast({ title: "Image attached", description: "Image reference added to dispatch note." });
+                        });
+                      }}>
+                        <Camera className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               )}
 

@@ -15,10 +15,10 @@ const navigationItems = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard },
   { path: "/orders", label: "Orders", icon: ShoppingCart },
   { path: "/inventory", label: "Inventory", icon: Package },
+  { path: "/leads", label: "Leads", icon: Zap },
   { path: "/masters", label: "Masters", icon: Settings },
   { path: "/notes", label: "Notes", icon: StickyNote },
   { path: "/scan-qr", label: "Scan QR", icon: QrCode },
-  { path: "/leads", label: "Leads", icon: Zap, disabled: true, comingSoon: true },
 ];
 
 export default function Sidebar() {

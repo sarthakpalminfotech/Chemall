@@ -18,9 +18,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useStore } from "@/lib/store";
-import { ArrowLeft, Plus, X, Info, AlertCircle } from "lucide-react";
+import { ArrowLeft, Plus, X, Info, AlertCircle, Mic, Camera } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { cn } from "@/lib/utils";
+import { cn, handleAudioCapture, handleCameraCapture } from "@/lib/utils";
 
 interface OrderProduct {
   productId: string;
@@ -47,14 +47,22 @@ export default function OrderManual() {
   const navigate = useNavigate();
   const location = useLocation();
   const importedOrder = location.state?.importedOrder;
+  const prefillCustomerId = location.state?.customerId;
+  const prefillProductIds = location.state?.productIds as string[];
 
   const [localSuppliers, setLocalSuppliers] = useState(suppliers);
   const [newSupplierOpen, setNewSupplierOpen] = useState(false);
   const [newSupplierData, setNewSupplierData] = useState({ name: "", contactNumber: "" });
   const [productPickerOpen, setProductPickerOpen] = useState(false);
 
-  const [selectedSupplier, setSelectedSupplier] = useState(importedOrder?.supplierId || "");
-  const [selectedProducts, setSelectedProducts] = useState<OrderProduct[]>(importedOrder?.products || []);
+  const [selectedSupplier, setSelectedSupplier] = useState(importedOrder?.supplierId || prefillCustomerId || "");
+  const [selectedProducts, setSelectedProducts] = useState<OrderProduct[]>(
+    importedOrder?.products || 
+    (prefillProductIds ? prefillProductIds.map(id => {
+      const p = products.find(prod => prod.id === id);
+      return { productId: id, productName: p?.name || "", quantity: 0, ratePerKg: 0 };
+    }).filter(p => p.productName) : [])
+  );
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [currency, setCurrency] = useState(importedOrder?.currency || "INR");
   const [preferredContainers, setPreferredContainers] = useState<string[]>([]);
@@ -334,13 +342,33 @@ export default function OrderManual() {
           {/* ── 6. Notes ── */}
           <div className="card-elevated p-5">
             <Label className="field-label">Notes</Label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Any additional notes for this order..."
-              rows={3}
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring transition-colors"
-            />
+            <div className="relative">
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Any additional notes for this order..."
+                rows={3}
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring transition-colors pb-10"
+              />
+              <div className="absolute bottom-2 left-2 flex items-center gap-2">
+                <Button type="button" variant="secondary" size="icon" className="w-8 h-8 rounded-full" onClick={() => {
+                  handleAudioCapture((file) => {
+                    setNotes(prev => prev ? prev + `\n[Audio attached: ${file.name}]` : `[Audio attached: ${file.name}]`);
+                    toast({ title: "Audio attached", description: "Audio reference added to notes." });
+                  });
+                }}>
+                  <Mic className="w-4 h-4" />
+                </Button>
+                <Button type="button" variant="secondary" size="icon" className="w-8 h-8 rounded-full" onClick={() => {
+                  handleCameraCapture((file) => {
+                    setNotes(prev => prev ? prev + `\n[Image attached: ${file.name}]` : `[Image attached: ${file.name}]`);
+                    toast({ title: "Image attached", description: "Image reference added to notes." });
+                  });
+                }}>
+                  <Camera className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
           </div>
 
           {/* ── 7. Total Amount (read-only) ── */}

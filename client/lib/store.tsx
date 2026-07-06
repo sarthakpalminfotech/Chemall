@@ -12,6 +12,7 @@ import {
   OrderStatus,
   SupplierType,
   DispatchContainerItem,
+  Lead,
 } from "@/lib/types";
 import { supabase } from "./supabase";
 
@@ -26,6 +27,7 @@ interface AppState {
   inventoryLogs: InventoryLog[];
   notes: Note[];
   alerts: Alert[];
+  leads: Lead[];
   loading: boolean;
 }
 
@@ -65,6 +67,10 @@ interface AppActions {
   // Alerts
   markAlertRead: (id: string) => Promise<void>;
 
+  // Leads
+  addLead: (lead: Omit<Lead, "id" | "createdAt" | "updatedAt">) => Promise<Lead>;
+  updateLead: (id: string, updates: Partial<Lead>) => Promise<void>;
+
   // Helpers
   getProductContainerTypes: (productIds: string[]) => Product[];
   getPreviousRate: (supplierId: string, productId: string) => number | null;
@@ -85,6 +91,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [inventoryLogs, setInventoryLogs] = useState<InventoryLog[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
 
   const refreshData = async () => {
@@ -266,6 +273,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.error("Error loading Supabase data:", err);
     } finally {
+      // Load leads from localStorage for now
+      try {
+        const storedLeads = localStorage.getItem("chemall_leads");
+        if (storedLeads) {
+          const parsed = JSON.parse(storedLeads);
+          setLeads(parsed.map((l: any) => ({
+            ...l,
+            createdAt: new Date(l.createdAt),
+            updatedAt: new Date(l.updatedAt),
+            statusUpdatedAt: l.statusUpdatedAt ? new Date(l.statusUpdatedAt) : new Date(l.createdAt),
+            scheduledAlert: l.scheduledAlert ? new Date(l.scheduledAlert) : undefined
+          })));
+        }
+      } catch (e) {
+        console.error("Error loading leads from local storage", e);
+      }
       setLoading(false);
     }
   };
@@ -273,6 +296,69 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     refreshData();
   }, []);
+
+  useEffect(() => {
+    if (loading) return;
+    
+    const now = new Date();
+    const newLeadAlerts: Alert[] = [];
+    
+    leads.forEach(lead => {
+      const statusTime = lead.statusUpdatedAt || lead.createdAt;
+      const diffDays = Math.floor((now.getTime() - statusTime.getTime()) / (1000 * 60 * 60 * 24));
+      
+      // 1. "new" status for 2 days
+      if (lead.status === "new" && diffDays >= 2 && diffDays % 2 === 0) {
+        newLeadAlerts.push({
+          id: `lead_alert_new_${lead.id}`,
+          type: "lead_alert",
+          title: "New Lead Pending",
+          message: `${lead.companyName} lead has been pending for ${diffDays} days`,
+          timestamp: now,
+          read: false,
+          relatedLeadId: lead.id,
+        });
+      }
+      
+      // 2. "in discussion" status for 7 days
+      if (lead.status === "in discussion" && diffDays >= 7) {
+        newLeadAlerts.push({
+          id: `lead_alert_discuss_${lead.id}`,
+          type: "lead_alert",
+          title: "Lead Discussion Prolonged",
+          message: `${lead.companyName} lead has been in discussion since ${diffDays} days`,
+          timestamp: now,
+          read: false,
+          relatedLeadId: lead.id,
+        });
+      }
+      
+      // 3. "paused/hold" scheduled alert
+      if (lead.status === "paused/hold" && lead.scheduledAlert) {
+        if (now >= lead.scheduledAlert) {
+          newLeadAlerts.push({
+            id: `lead_alert_scheduled_${lead.id}`,
+            type: "lead_alert",
+            title: "Scheduled Lead Follow-up",
+            message: `Scheduled follow-up for ${lead.companyName} is due`,
+            timestamp: lead.scheduledAlert,
+            read: false,
+            relatedLeadId: lead.id,
+          });
+        }
+      }
+    });
+
+    if (newLeadAlerts.length > 0) {
+      setAlerts(prev => {
+        const nonLeadAlerts = prev.filter(a => a.type !== "lead_alert");
+        // Only append if there's a meaningful change to avoid infinite renders if we mistakenly depend on alerts
+        return [...newLeadAlerts, ...nonLeadAlerts];
+      });
+    } else {
+      setAlerts(prev => prev.filter(a => a.type !== "lead_alert"));
+    }
+  }, [leads, loading]);
 
   // ── Products ────────────────────────────────────────────────────────────────
   const addProduct = async (data: Omit<Product, "id" | "createdAt">) => {
@@ -693,6 +779,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return user?.designation === "owner" || user?.designation === "admin";
   };
 
+  // ── Leads ──────────────────────────────────────────────────────────────────
+  const addLead = async (data: Omit<Lead, "id" | "createdAt" | "updatedAt">) => {
+    const newLead: Lead = {
+      ...data,
+      id: crypto.randomUUID(),
+      status: data.status || "new",
+      statusUpdatedAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    
+    setLeads(prev => {
+      const updated = [newLead, ...prev];
+      localStorage.setItem("chemall_leads", JSON.stringify(updated));
+      return updated;
+    });
+    
+    return newLead;
+  };
+
+  const updateLead = async (id: string, updates: Partial<Lead>) => {
+    setLeads(prev => {
+      const updated = prev.map(l => {
+        if (l.id === id) {
+          const newStatusUpdatedAt = updates.status && updates.status !== l.status 
+            ? new Date() 
+            : l.statusUpdatedAt;
+          return { ...l, ...updates, updatedAt: new Date(), statusUpdatedAt: newStatusUpdatedAt };
+        }
+        return l;
+      });
+      localStorage.setItem("chemall_leads", JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   const store: AppStore = {
     products,
     orders,
@@ -702,6 +824,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     inventoryLogs,
     notes,
     alerts,
+    leads,
     loading,
     addProduct,
     updateProduct,
@@ -719,6 +842,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     updateNote,
     deleteNote,
     markAlertRead,
+    addLead,
+    updateLead,
     getProductContainerTypes,
     getPreviousRate,
     isOwnerAdmin,

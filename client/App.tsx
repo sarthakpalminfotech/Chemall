@@ -19,7 +19,8 @@ import Inventory from "./pages/Inventory";
 import InventoryHistory from "./pages/InventoryHistory";
 import Notes from "./pages/Notes";
 import ScanQR from "./pages/ScanQR";
-import Placeholder from "./pages/Placeholder";
+import Leads from "./pages/Leads";
+import LeadNew from "./pages/LeadNew";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -44,7 +45,9 @@ const App = () => (
               <Route path="/masters" element={<Masters />} />
               <Route path="/notes" element={<Notes />} />
               <Route path="/scan-qr" element={<ScanQR />} />
-              <Route path="/leads" element={<Placeholder title="Leads" comingSoon />} />
+              <Route path="/leads" element={<Leads />} />
+              <Route path="/leads/new" element={<LeadNew />} />
+              <Route path="/leads/:id" element={<LeadNew />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>

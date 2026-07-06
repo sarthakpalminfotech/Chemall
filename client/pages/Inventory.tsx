@@ -24,7 +24,7 @@ import { Plus, History, X, Package, AlertTriangle, TrendingDown, TrendingUp, Min
 import { formatDate } from "date-fns";
 import { Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
-import { cn } from "@/lib/utils";
+import { cn, handleAudioCapture, handleCameraCapture } from "@/lib/utils";
 
 interface AddItem {
   productId: string;
@@ -160,7 +160,9 @@ export default function Inventory() {
                             <SelectTrigger className="flex-1 text-sm"><SelectValue placeholder="Select product" /></SelectTrigger>
                             <SelectContent>
                               {availableProducts.filter(p => !usedIds.includes(p.id) || p.id === item.productId).map(p => (
-                                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                                <SelectItem key={p.id} value={p.id}>
+                                  {p.name}{p.capacity ? ` (${p.capacity} kg)` : ""}
+                                </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
@@ -234,10 +236,20 @@ export default function Inventory() {
                         className="min-h-[100px] resize-none pb-12"
                       />
                       <div className="absolute bottom-2 left-2 flex items-center gap-2">
-                        <Button type="button" variant="secondary" size="icon" className="w-8 h-8 rounded-full" onClick={() => toast({ title: "Coming soon", description: "Voice note functionality will be available in a future update." })}>
+                        <Button type="button" variant="secondary" size="icon" className="w-8 h-8 rounded-full" onClick={() => {
+                          handleAudioCapture((file) => {
+                            setRemoveNotes(prev => prev ? prev + `\n[Audio attached: ${file.name}]` : `[Audio attached: ${file.name}]`);
+                            toast({ title: "Audio attached", description: "Audio reference added to notes." });
+                          });
+                        }}>
                           <Mic className="w-4 h-4" />
                         </Button>
-                        <Button type="button" variant="secondary" size="icon" className="w-8 h-8 rounded-full" onClick={() => toast({ title: "Coming soon", description: "Camera functionality will be available in a future update." })}>
+                        <Button type="button" variant="secondary" size="icon" className="w-8 h-8 rounded-full" onClick={() => {
+                          handleCameraCapture((file) => {
+                            setRemoveNotes(prev => prev ? prev + `\n[Image attached: ${file.name}]` : `[Image attached: ${file.name}]`);
+                            toast({ title: "Image attached", description: "Image reference added to notes." });
+                          });
+                        }}>
                           <Camera className="w-4 h-4" />
                         </Button>
                       </div>

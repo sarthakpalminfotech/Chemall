@@ -13,6 +13,30 @@ export interface Product {
   createdAt: Date;
 }
 
+// Lead Types
+export type LeadSource = "mail" | "website" | "direct contact" | "agent" | "social media" | string;
+export type LeadIntensity = "cold" | "moderate" | "hot";
+export type LeadStatus = "new" | "in discussion" | "paused/hold" | "won" | "lost" | "disqualified";
+
+export interface Lead {
+  id: string;
+  companyName: string;
+  contactNumber: string;
+  contactPersonName?: string;
+  contactPersonNumber?: string;
+  address?: string;
+  source: LeadSource;
+  intensity: LeadIntensity;
+  status: LeadStatus;
+  statusReason?: string;
+  products: string[]; // array of product IDs
+  quantity?: number; // kg
+  notes?: string;
+  statusUpdatedAt?: Date;
+  scheduledAlert?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
 
 // Order Types
 export type OrderStatus = "pending" | "in_production" | "dispatched";
@@ -123,6 +147,7 @@ export type AlertType =
   | "no_dispatch"
   | "priority_unattended"
   | "repeat_customer_order"
+  | "lead_alert"
   | "other";
 
 export interface Alert {
@@ -134,6 +159,7 @@ export interface Alert {
   read: boolean;
   relatedOrderId?: string;
   relatedProductId?: string;
+  relatedLeadId?: string;
 }
 
 // KPI Types

@@ -39,6 +39,7 @@ const alertConfig = {
   no_dispatch: { icon: Factory, color: "text-orange-500", bg: "bg-orange-500/10", border: "border-orange-500/20", label: "No Dispatch" },
   priority_unattended: { icon: AlertTriangle, color: "text-destructive", bg: "bg-destructive/10", border: "border-destructive/20", label: "Priority Alert" },
   repeat_customer_order: { icon: TrendingUp, color: "text-blue-500", bg: "bg-blue-500/10", border: "border-blue-500/20", label: "Repeat Order" },
+  lead_alert: { icon: Users, color: "text-purple-500", bg: "bg-purple-500/10", border: "border-purple-500/20", label: "Lead Alert" },
   other: { icon: Bell, color: "text-muted-foreground", bg: "bg-secondary", border: "border-border", label: "Alert" },
 };
 
@@ -56,10 +57,10 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 export default function Dashboard() {
-  const { orders, alerts, inventory, inventoryLogs, suppliers, products } = useStore();
+  const { orders, alerts, inventory, inventoryLogs, suppliers, products, leads } = useStore();
   const [dispatchView, setDispatchView] = useState<"monthly" | "weekly">("monthly");
   
-  const [dateFilter, setDateFilter] = useState<"today" | "month" | "custom">("today");
+  const [dateFilter, setDateFilter] = useState<"today" | "week" | "month" | "custom">("today");
   const [customStartDate, setCustomStartDate] = useState<string>("");
   const [customEndDate, setCustomEndDate] = useState<string>("");
 
@@ -74,6 +75,12 @@ export default function Dashboard() {
   
       if (dateFilter === "today") {
         return d.getTime() === today.getTime();
+      }
+      
+      if (dateFilter === "week") {
+        const firstDayOfWeek = new Date(today);
+        firstDayOfWeek.setDate(today.getDate() - today.getDay());
+        return d >= firstDayOfWeek;
       }
       
       if (dateFilter === "month") {
@@ -103,8 +110,11 @@ export default function Dashboard() {
     // New customers
     const newCustomers = suppliers.filter((s) => s.type === "customer" && isWithinDateRange(s.createdAt)).length;
 
-    return { pendingOrders, inProduction, dispatchQty, newCustomers };
-  }, [orders, inventoryLogs, suppliers, dateFilter, customStartDate, customEndDate]);
+    // New leads
+    const newLeadsCount = leads.filter(l => l.status === "new" && isWithinDateRange(l.createdAt)).length;
+
+    return { pendingOrders, inProduction, dispatchQty, newCustomers, newLeadsCount };
+  }, [orders, inventoryLogs, suppliers, leads, dateFilter, customStartDate, customEndDate]);
 
   // ─── Dispatch Chart Data ─────────────────────────────────────────────────────
   const dispatchData = useMemo(() => {
@@ -193,6 +203,7 @@ export default function Dashboard() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="today">Today</SelectItem>
+                <SelectItem value="week">This Week</SelectItem>
                 <SelectItem value="month">This Month</SelectItem>
                 <SelectItem value="custom">Custom Date</SelectItem>
               </SelectContent>
@@ -229,18 +240,15 @@ export default function Dashboard() {
 
       <div className="px-4 md:px-6 space-y-6 pb-8">
         <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 md:gap-4">
-          {/* Today's Leads — Coming Soon */}
+          {/* New Leads */}
           <div className="kpi-card col-span-1 flex flex-col gap-1.5 md:gap-2 relative overflow-hidden">
-            <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-secondary flex items-center justify-center shrink-0">
-              <Zap className="w-4 h-4 md:w-5 md:h-5 text-muted-foreground" />
+            <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
+              <Zap className="w-4 h-4 md:w-5 md:h-5 text-emerald-500" />
             </div>
             <div className="mt-1 md:mt-2">
-              <p className="text-[13px] md:text-sm text-muted-foreground font-medium line-clamp-1">Today's Leads</p>
-              <p className="text-2xl md:text-3xl font-bold text-muted-foreground/40 mt-0.5 md:mt-1">—</p>
+              <p className="text-[13px] md:text-sm text-muted-foreground font-medium line-clamp-1">New Leads</p>
+              <p className="text-2xl md:text-3xl font-bold text-foreground mt-0.5 md:mt-1">{kpis.newLeadsCount}</p>
             </div>
-            <span className="absolute top-3 right-3 text-[10px] px-1.5 py-0.5 bg-secondary text-muted-foreground rounded-md font-medium">
-              Soon
-            </span>
           </div>
 
           {/* New Customers */}
