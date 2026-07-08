@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Link, useNavigate, useLocation, Navigate } from "react-router-dom";
+import { Link, useNavigate, useLocation, Navigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,10 +42,13 @@ function currencySymbol(c: string) {
 }
 
 export default function OrderManual() {
-  const { currentUser, isOwnerAdmin, products, suppliers, addOrder, addSupplier, getPreviousRate } = useStore();
+  const { currentUser, isOwnerAdmin, products, suppliers, orders, addOrder, updateOrderFull, addSupplier, getPreviousRate } = useStore();
   const { toast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const editId = searchParams.get("edit");
+  const editOrder = editId ? orders.find(o => o.id === editId) : null;
   
   const canWrite = isOwnerAdmin() || currentUser?.moduleAccess.find(m => m.moduleName === "Orders")?.write === true;
   if (!canWrite) return <Navigate to="/orders" replace />;
@@ -58,23 +61,24 @@ export default function OrderManual() {
   const [newSupplierData, setNewSupplierData] = useState({ name: "", contactNumber: "" });
   const [productPickerOpen, setProductPickerOpen] = useState(false);
 
-  const [selectedSupplier, setSelectedSupplier] = useState(importedOrder?.supplierId || prefillCustomerId || "");
+  const [selectedSupplier, setSelectedSupplier] = useState(editOrder?.supplierId || importedOrder?.supplierId || prefillCustomerId || "");
   const [selectedProducts, setSelectedProducts] = useState<OrderProduct[]>(
+    editOrder?.products.map(p => ({ ...p, quantityError: "" })) || 
     importedOrder?.products || 
     (prefillProductIds ? prefillProductIds.map(id => {
       const p = products.find(prod => prod.id === id);
       return { productId: id, productName: p?.name || "", quantity: 0, ratePerKg: 0 };
     }).filter(p => p.productName) : [])
   );
-  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
-  const [currency, setCurrency] = useState(importedOrder?.currency || "INR");
-  const [preferredContainers, setPreferredContainers] = useState<string[]>([]);
-  const [notes, setNotes] = useState(importedOrder?.notes || "");
-  const [repeatOrder, setRepeatOrder] = useState(false);
+  const [date, setDate] = useState(editOrder ? editOrder.date.toISOString().split("T")[0] : new Date().toISOString().split("T")[0]);
+  const [currency, setCurrency] = useState(editOrder?.currency || importedOrder?.currency || "INR");
+  const [preferredContainers, setPreferredContainers] = useState<string[]>(editOrder?.preferredContainers || []);
+  const [notes, setNotes] = useState(editOrder?.notes || importedOrder?.notes || "");
+  const [repeatOrder, setRepeatOrder] = useState(editOrder?.repeatOrder?.enabled || false);
   const [repeatConfig, setRepeatConfig] = useState({
-    startDate: new Date().toISOString().split("T")[0],
-    recurrenceType: "monthly" as "monthly" | "weekly",
-    weekDays: [] as number[],
+    startDate: editOrder?.repeatOrder?.startDate ? editOrder.repeatOrder.startDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
+    recurrenceType: editOrder?.repeatOrder?.recurrenceType || "monthly",
+    weekDays: editOrder?.repeatOrder?.weekDays || [],
   });
 
   const finishedGoods = products.filter((p) => p.type === "finished_good");
@@ -183,14 +187,14 @@ export default function OrderManual() {
     }));
 
     try {
-      await addOrder({
+      const orderData = {
         supplierId: selectedSupplier,
         supplierName: supplier?.name ?? "",
         products: orderProducts,
         totalAmount,
         currency: currency as "INR" | "USD" | "EUR",
         date: new Date(date),
-        status: "pending",
+        status: editOrder?.status || "pending",
         notes: notes || undefined,
         preferredContainers: preferredContainers.length > 0 ? preferredContainers : undefined,
         repeatOrder: repeatOrder
@@ -201,12 +205,19 @@ export default function OrderManual() {
               weekDays: repeatConfig.recurrenceType === "weekly" ? repeatConfig.weekDays : undefined,
             }
           : undefined,
-      });
+      };
 
-      toast({ title: "Order created", description: `Order for ${supplier?.name} has been created.` });
+      if (editId) {
+        await updateOrderFull(editId, orderData);
+        toast({ title: "Order updated", description: `Order for ${supplier?.name} has been updated.` });
+      } else {
+        await addOrder(orderData as any);
+        toast({ title: "Order created", description: `Order for ${supplier?.name} has been created.` });
+      }
+
       navigate("/orders");
     } catch (err: any) {
-      toast({ title: "Error creating order", description: err.message, variant: "destructive" });
+      toast({ title: `Error ${editId ? "updating" : "creating"} order`, description: err.message, variant: "destructive" });
     }
   };
 
@@ -223,171 +234,167 @@ export default function OrderManual() {
 
         <div className="mb-6 flex justify-between items-start">
           <div>
-            <h1 className="text-2xl font-bold text-foreground tracking-tight">Manual Add Order</h1>
-            <p className="text-sm text-muted-foreground mt-1">Fill in the details to create a new order</p>
+            <h1 className="text-2xl font-bold text-foreground tracking-tight">{editId ? "Edit Order" : "Manual Add Order"}</h1>
+            <p className="text-sm text-muted-foreground mt-1">{editId ? "Update the details for this order" : "Fill in the details to create a new order"}</p>
           </div>
-          <Button type="button" variant="outline" size="sm" onClick={() => navigate('/leads?status=new,in discussion,paused/hold')}>
-            Intake from Lead
-          </Button>
+          {!editId && (
+            <Button type="button" variant="outline" size="sm" onClick={() => navigate('/leads?status=new,in discussion,paused/hold')}>
+              Intake from Lead
+            </Button>
+          )}
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* ── 1. Supplier/Customer ── */}
-          <div className="card-elevated p-5">
-            <Label className="field-label">Supplier / Customer <span className="text-destructive">*</span></Label>
-            <div className="flex gap-2">
-              <Select value={selectedSupplier} onValueChange={setSelectedSupplier}>
-                <SelectTrigger className="flex-1">
-                  <SelectValue placeholder="Select or search supplier..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {localSuppliers.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button type="button" variant="outline" size="icon" onClick={() => setNewSupplierOpen(true)} title="Add new supplier">
-                <Plus className="w-4 h-4" />
+          {/* ── Section 1: Order Details & Pricing ── */}
+          <div className="card-elevated space-y-6 p-5 pb-0 overflow-hidden">
+            <div>
+              <Label className="field-label">Supplier / Customer <span className="text-destructive">*</span></Label>
+              <div className="flex gap-2">
+                <Select value={selectedSupplier} onValueChange={setSelectedSupplier}>
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Select or search supplier..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {localSuppliers.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button type="button" variant="outline" size="icon" onClick={() => setNewSupplierOpen(true)} title="Add new supplier">
+                  <Plus className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+
+            <div>
+              <Label className="field-label">Products <span className="text-destructive">*</span></Label>
+              {selectedProducts.length === 0 ? (
+                <p className="text-sm text-muted-foreground mb-3">No products selected yet</p>
+              ) : (
+                <div className="space-y-3 mb-4">
+                  {selectedProducts.map((prod, idx) => {
+                    const prevRate = selectedSupplier
+                      ? getPreviousRate(selectedSupplier, prod.productId)
+                      : null;
+                    return (
+                      <div key={prod.productId} className="p-4 bg-secondary/50 rounded-xl border border-border/50">
+                        <div className="flex items-center justify-between mb-3">
+                          <p className="font-semibold text-sm">{prod.productName}</p>
+                          <button type="button" onClick={() => removeProduct(prod.productId)} className="text-muted-foreground hover:text-destructive transition-colors">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <Label className="text-xs text-muted-foreground mb-1 block">Quantity (kg) *</Label>
+                            <Input
+                              type="number"
+                              min="1"
+                              step="1"
+                              value={prod.quantity || ""}
+                              onChange={(e) => updateProduct(idx, "quantity", e.target.value)}
+                              placeholder="0"
+                              className={cn(prod.quantityError && "border-destructive focus-visible:ring-destructive")}
+                            />
+                            {prod.quantityError && (
+                              <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                                <AlertCircle className="w-3 h-3" /> {prod.quantityError}
+                              </p>
+                            )}
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground mb-1 block">Rate/kg ({currencySymbol(currency)}) *</Label>
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={prod.ratePerKg || ""}
+                              onChange={(e) => updateProduct(idx, "ratePerKg", parseFloat(e.target.value) || 0)}
+                              placeholder="0.00"
+                            />
+                          </div>
+                        </div>
+                        {prevRate !== null && (
+                          <div className="mt-2.5 flex items-center gap-1.5 text-xs text-muted-foreground bg-secondary rounded-md px-2 py-1.5">
+                            <Info className="w-3 h-3 flex-shrink-0" />
+                            <span>Previous rate from this supplier: <span className="font-semibold text-foreground">{currencySymbol(currency)}{prevRate}/kg</span></span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <Button type="button" variant="outline" size="sm" className="w-full gap-2" onClick={() => setProductPickerOpen(true)}>
+                <Plus className="w-4 h-4" /> Add Product
               </Button>
             </div>
-          </div>
 
-          {/* ── 2. Products ── */}
-          <div className="card-elevated p-5">
-            <Label className="field-label">Products <span className="text-destructive">*</span></Label>
-            {selectedProducts.length === 0 ? (
-              <p className="text-sm text-muted-foreground mb-3">No products selected yet</p>
-            ) : (
-              <div className="space-y-3 mb-4">
-                {selectedProducts.map((prod, idx) => {
-                  const prevRate = selectedSupplier
-                    ? getPreviousRate(selectedSupplier, prod.productId)
-                    : null;
-                  return (
-                    <div key={prod.productId} className="p-4 bg-secondary/50 rounded-xl border border-border/50">
-                      <div className="flex items-center justify-between mb-3">
-                        <p className="font-semibold text-sm">{prod.productName}</p>
-                        <button type="button" onClick={() => removeProduct(prod.productId)} className="text-muted-foreground hover:text-destructive transition-colors">
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <Label className="text-xs text-muted-foreground mb-1 block">Quantity (kg) * <span className="text-[10px]">(whole numbers)</span></Label>
-                          <Input
-                            type="number"
-                            min="1"
-                            step="1"
-                            value={prod.quantity || ""}
-                            onChange={(e) => updateProduct(idx, "quantity", e.target.value)}
-                            placeholder="0"
-                            className={cn(prod.quantityError && "border-destructive focus-visible:ring-destructive")}
-                          />
-                          {prod.quantityError && (
-                            <p className="text-xs text-destructive mt-1 flex items-center gap-1">
-                              <AlertCircle className="w-3 h-3" /> {prod.quantityError}
-                            </p>
-                          )}
-                        </div>
-                        <div>
-                          <Label className="text-xs text-muted-foreground mb-1 block">Rate/kg ({currencySymbol(currency)}) *</Label>
-                          <Input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={prod.ratePerKg || ""}
-                            onChange={(e) => updateProduct(idx, "ratePerKg", parseFloat(e.target.value) || 0)}
-                            placeholder="0.00"
-                          />
-                        </div>
-                      </div>
-                      {prevRate !== null && (
-                        <div className="mt-2.5 flex items-center gap-1.5 text-xs text-muted-foreground bg-secondary rounded-md px-2 py-1.5">
-                          <Info className="w-3 h-3 flex-shrink-0" />
-                          <span>Previous rate from this supplier: <span className="font-semibold text-foreground">{currencySymbol(currency)}{prevRate}/kg</span></span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            <Button type="button" variant="outline" size="sm" className="w-full gap-2" onClick={() => setProductPickerOpen(true)}>
-              <Plus className="w-4 h-4" /> Add Product
-            </Button>
-          </div>
-
-          {/* ── 3. Date ── */}
-          <div className="card-elevated p-5">
-            <Label className="field-label">Order Date</Label>
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          </div>
-
-
-
-          {/* ── 5. Preferred Containers ── */}
-          {availableContainers.length > 0 && (
-            <div className="card-elevated p-5">
-              <Label className="field-label">Preferred Containers</Label>
-              <div className="space-y-2">
-                {availableContainers.map((ct) => (
-                  <label key={ct.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-secondary cursor-pointer transition-colors">
-                    <Checkbox
-                      checked={preferredContainers.includes(ct.id)}
-                      onCheckedChange={(checked) => {
-                        setPreferredContainers((prev) =>
-                          checked ? [...prev, ct.id] : prev.filter((id) => id !== ct.id)
-                        );
-                      }}
-                    />
-                    <span className="text-sm">{ct.name}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ── 6. Notes ── */}
-          <div className="card-elevated p-5">
-            <Label className="field-label">Notes</Label>
-            <div className="relative">
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Any additional notes for this order..."
-                rows={3}
-                className="w-full px-3 py-2 border border-border rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring transition-colors pb-10"
-              />
-              <div className="absolute bottom-2 left-2 flex items-center gap-2">
-                <Button type="button" variant="secondary" size="icon" className="w-8 h-8 rounded-full" onClick={() => {
-                  handleAudioCapture((file) => {
-                    setNotes(prev => prev ? prev + `\n[Audio attached: ${file.name}]` : `[Audio attached: ${file.name}]`);
-                    toast({ title: "Audio attached", description: "Audio reference added to notes." });
-                  });
-                }}>
-                  <Mic className="w-4 h-4" />
-                </Button>
-                <Button type="button" variant="secondary" size="icon" className="w-8 h-8 rounded-full" onClick={() => {
-                  handleCameraCapture((file) => {
-                    setNotes(prev => prev ? prev + `\n[Image attached: ${file.name}]` : `[Image attached: ${file.name}]`);
-                    toast({ title: "Image attached", description: "Image reference added to notes." });
-                  });
-                }}>
-                  <Camera className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          {/* ── 7. Total Amount (read-only) ── */}
-          <div className="card-elevated p-5 bg-primary/5 border-primary/20">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Total Amount</p>
-              </div>
+            <div className="pt-4 border-t border-border flex items-center justify-between bg-primary/5 -mx-5 p-5 border-primary/20">
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Total Amount</p>
               <p className="text-3xl font-bold text-foreground tracking-tight">
                 {currencySymbol(currency)}{totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
+            </div>
+          </div>
+
+          {/* ── Section 2: Order Meta ── */}
+          <div className="card-elevated p-5 space-y-6">
+            <div>
+              <Label className="field-label">Order Date</Label>
+              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            </div>
+
+            {availableContainers.length > 0 && (
+              <div>
+                <Label className="field-label">Preferred Containers</Label>
+                <div className="space-y-2">
+                  {availableContainers.map((ct) => (
+                    <label key={ct.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-secondary cursor-pointer transition-colors">
+                      <Checkbox
+                        checked={preferredContainers.includes(ct.id)}
+                        onCheckedChange={(checked) => {
+                          setPreferredContainers((prev) =>
+                            checked ? [...prev, ct.id] : prev.filter((id) => id !== ct.id)
+                          );
+                        }}
+                      />
+                      <span className="text-sm">{ct.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <Label className="field-label">Notes</Label>
+              <div className="relative">
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Any additional notes for this order..."
+                  rows={3}
+                  className="w-full px-3 py-2 border border-border rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring transition-colors pb-10"
+                />
+                <div className="absolute bottom-2 left-2 flex items-center gap-2">
+                  <Button type="button" variant="secondary" size="icon" className="w-8 h-8 rounded-full" onClick={() => {
+                    handleAudioCapture((file) => {
+                      setNotes(prev => prev ? prev + `\n[Audio attached: ${file.name}]` : `[Audio attached: ${file.name}]`);
+                      toast({ title: "Audio attached", description: "Audio reference added to notes." });
+                    });
+                  }}>
+                    <Mic className="w-4 h-4" />
+                  </Button>
+                  <Button type="button" variant="secondary" size="icon" className="w-8 h-8 rounded-full" onClick={() => {
+                    handleCameraCapture((file) => {
+                      setNotes(prev => prev ? prev + `\n[Image attached: ${file.name}]` : `[Image attached: ${file.name}]`);
+                      toast({ title: "Image attached", description: "Image reference added to notes." });
+                    });
+                  }}>
+                    <Camera className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -400,24 +407,21 @@ export default function OrderManual() {
               />
               <div>
                 <p className="text-sm font-semibold">Enable Repeat Order</p>
-                {selectedSupplierName && (
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Repeat alert for {selectedSupplierName}
-                  </p>
-                )}
               </div>
             </label>
 
             {repeatOrder && (
               <div className="mt-4 pt-4 border-t border-border space-y-4">
-                <div>
-                  <Label className="field-label">Start Date</Label>
-                  <Input
-                    type="date"
-                    value={repeatConfig.startDate}
-                    onChange={(e) => setRepeatConfig({ ...repeatConfig, startDate: e.target.value })}
-                  />
-                </div>
+                {repeatConfig.recurrenceType === "monthly" && (
+                  <div>
+                    <Label className="field-label">Start Date</Label>
+                    <Input
+                      type="date"
+                      value={repeatConfig.startDate}
+                      onChange={(e) => setRepeatConfig({ ...repeatConfig, startDate: e.target.value })}
+                    />
+                  </div>
+                )}
                 <div>
                   <Label className="field-label">Recurrence Type</Label>
                   <Select
@@ -460,9 +464,6 @@ export default function OrderManual() {
                     </div>
                   </div>
                 )}
-                <p className="text-xs text-muted-foreground bg-secondary/50 rounded-lg p-2.5">
-                  💡 You'll receive an alert if a repeat order from {selectedSupplierName || "this supplier"} is not received around the scheduled date.
-                </p>
               </div>
             )}
           </div>
@@ -473,7 +474,7 @@ export default function OrderManual() {
               <Button type="button" variant="outline" className="w-full">Cancel</Button>
             </Link>
             <Button type="submit" className="flex-1" disabled={!isValid}>
-              Create Order
+              {editId ? "Update Order" : "Create Order"}
             </Button>
           </div>
         </form>

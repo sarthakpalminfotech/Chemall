@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { useStore } from "@/lib/store";
+import { cn } from "@/lib/utils";
 import {
   BarChart,
   Bar,
@@ -18,6 +19,19 @@ import {
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   ShoppingCart,
   Factory,
   AlertTriangle,
@@ -28,6 +42,7 @@ import {
   Clock,
   Bell,
   ArrowRight,
+  Repeat,
 } from "lucide-react";
 import { formatDate } from "date-fns";
 import { Link } from "react-router-dom";
@@ -57,16 +72,14 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 export default function Dashboard() {
-  const { orders, alerts, inventory, inventoryLogs, suppliers, products, leads } = useStore();
+  const { currentUser, isOwnerAdmin, orders, alerts, inventory, inventoryLogs, suppliers, products, leads, markRepeatOrderReceived } = useStore();
   const [dispatchView, setDispatchView] = useState<"monthly" | "weekly">("monthly");
+  const [showRepeatOrdersDialog, setShowRepeatOrdersDialog] = useState(false);
   
   const [dateFilter, setDateFilter] = useState<"today" | "week" | "month" | "year" | "custom">("today");
   const [customStartDate, setCustomStartDate] = useState<string>("");
   const [customEndDate, setCustomEndDate] = useState<string>("");
 
-  const [leadDateFilter, setLeadDateFilter] = useState<"today" | "week" | "month" | "year" | "custom">("today");
-  const [leadCustomStartDate, setLeadCustomStartDate] = useState<string>("");
-  const [leadCustomEndDate, setLeadCustomEndDate] = useState<string>("");
 
   const isWithinDateRange = useMemo(() => {
     return (dateString: string | Date) => {
@@ -124,67 +137,42 @@ export default function Dashboard() {
     // New leads
     const newLeadsCount = leads.filter(l => l.status === "new" && isWithinDateRange(l.createdAt)).length;
 
-    return { pendingOrders, inProduction, dispatchQty, newCustomers, newLeadsCount };
-  }, [orders, suppliers, leads, isWithinDateRange]);
-
-  const isWithinLeadDateRange = useMemo(() => {
-    return (dateString: string | Date) => {
-      const d = new Date(dateString);
-      d.setHours(0, 0, 0, 0);
-  
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-  
-      if (leadDateFilter === "today") {
-        return d.getTime() === today.getTime();
+    // Repeat orders pending
+    const today = new Date();
+    const pendingRepeatOrdersList = orders.filter((o) => {
+      if (!o.repeatOrder?.enabled) return false;
+      const r = o.repeatOrder;
+      
+      let cycleStart: Date;
+      if (r.recurrenceType === "weekly") {
+        cycleStart = new Date(today);
+        const day = cycleStart.getDay();
+        const diff = cycleStart.getDate() - day + (day === 0 ? -6 : 1);
+        cycleStart.setDate(diff);
+        cycleStart.setHours(0,0,0,0);
+      } else {
+        cycleStart = new Date(today.getFullYear(), today.getMonth(), 1);
       }
       
-      if (leadDateFilter === "week") {
-        const firstDayOfWeek = new Date(today);
-        firstDayOfWeek.setDate(today.getDate() - today.getDay());
-        return d >= firstDayOfWeek;
-      }
-      
-      if (leadDateFilter === "month") {
-        const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-        return d >= monthStart;
-      }
-
-      if (leadDateFilter === "year") {
-        const yearStart = new Date(today.getFullYear(), 0, 1);
-        return d >= yearStart;
-      }
-      
-      if (leadDateFilter === "custom") {
-        if (!leadCustomStartDate || !leadCustomEndDate) return true;
-        const start = new Date(leadCustomStartDate);
-        start.setHours(0, 0, 0, 0);
-        const end = new Date(leadCustomEndDate);
-        end.setHours(23, 59, 59, 999);
-        return d >= start && d <= end;
+      if (r.lastReceived) {
+        const lastRecv = new Date(r.lastReceived);
+        if (lastRecv >= cycleStart) {
+          return false;
+        }
       }
       return true;
-    };
-  }, [leadDateFilter, leadCustomStartDate, leadCustomEndDate]);
-
-  // ─── Leads Chart Data ────────────────────────────────────────────────────────
-  const leadsData = useMemo(() => {
-    const filteredLeads = leads.filter(l => isWithinLeadDateRange(l.createdAt));
-    const counts = { "new": 0, "in discussion": 0, "paused/hold": 0, "won": 0, "lost": 0, "disqualified": 0 };
-    filteredLeads.forEach(l => {
-      if (counts[l.status as keyof typeof counts] !== undefined) {
-        counts[l.status as keyof typeof counts]++;
-      }
     });
-    return [
-      { label: "New", value: counts["new"] },
-      { label: "Discussion", value: counts["in discussion"] },
-      { label: "Paused", value: counts["paused/hold"] },
-      { label: "Won", value: counts["won"] },
-      { label: "Lost", value: counts["lost"] },
-      { label: "Disqual.", value: counts["disqualified"] },
-    ];
-  }, [leads, isWithinLeadDateRange]);
+
+    return { 
+      pendingOrders, 
+      inProduction, 
+      dispatchQty, 
+      newCustomers, 
+      newLeadsCount,
+      pendingRepeatOrdersList
+    };
+  }, [orders, suppliers, leads, isWithinDateRange]);
+
 
   // ─── Dispatch Chart Data ─────────────────────────────────────────────────────
   const dispatchData = useMemo(() => {
@@ -254,6 +242,140 @@ export default function Dashboard() {
     (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
   );
 
+  const isSales = currentUser?.designation === "sales";
+  const isWorker = currentUser?.designation === "worker";
+
+  const visibleKpis = useMemo(() => {
+    const all = [
+      {
+        id: "newLeads",
+        node: (
+          <div key="newLeads" className="kpi-card col-span-1 flex flex-col gap-1.5 md:gap-2 relative overflow-hidden">
+            <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
+              <Zap className="w-4 h-4 md:w-5 md:h-5 text-emerald-500" />
+            </div>
+            <div className="mt-1 md:mt-2">
+              <p className="text-[13px] md:text-sm text-muted-foreground font-medium line-clamp-1">New Leads</p>
+              <p className="text-2xl md:text-3xl font-bold text-foreground mt-0.5 md:mt-1">{kpis.newLeadsCount}</p>
+            </div>
+          </div>
+        )
+      },
+      {
+        id: "newCustomers",
+        node: (
+          <div key="newCustomers" className="kpi-card col-span-1 flex flex-col gap-1.5 md:gap-2">
+            <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0">
+              <Users className="w-4 h-4 md:w-5 md:h-5 text-blue-500" />
+            </div>
+            <div className="mt-1 md:mt-2">
+              <p className="text-[13px] md:text-sm text-muted-foreground font-medium line-clamp-1">New Customers</p>
+              <p className="text-2xl md:text-3xl font-bold text-foreground mt-0.5 md:mt-1">{kpis.newCustomers}</p>
+            </div>
+          </div>
+        )
+      },
+      {
+        id: "pendingOrders",
+        node: (
+          <div key="pendingOrders" className="kpi-card col-span-1 flex flex-col gap-1.5 md:gap-2">
+            <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-warning/10 flex items-center justify-center shrink-0">
+              <ShoppingCart className="w-4 h-4 md:w-5 md:h-5 text-warning" />
+            </div>
+            <div className="mt-1 md:mt-2">
+              <p className="text-[13px] md:text-sm text-muted-foreground font-medium line-clamp-1">Pending Orders</p>
+              <p className="text-2xl md:text-3xl font-bold text-foreground mt-0.5 md:mt-1">{kpis.pendingOrders}</p>
+            </div>
+          </div>
+        )
+      },
+      {
+        id: "inProduction",
+        node: (
+          <div key="inProduction" className="kpi-card col-span-1 flex flex-col gap-1.5 md:gap-2">
+            <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-success/10 flex items-center justify-center shrink-0">
+              <Factory className="w-4 h-4 md:w-5 md:h-5 text-success" />
+            </div>
+            <div className="mt-1 md:mt-2">
+              <p className="text-[13px] md:text-sm text-muted-foreground font-medium line-clamp-1">In Production</p>
+              <p className="text-2xl md:text-3xl font-bold text-foreground mt-0.5 md:mt-1">{kpis.inProduction}</p>
+            </div>
+          </div>
+        )
+      },
+      {
+        id: "dispatchedQty",
+        node: (
+          <div key="dispatchedQty" className="kpi-card col-span-1 flex flex-col gap-1.5 md:gap-2">
+            <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+              <TrendingUp className="w-4 h-4 md:w-5 md:h-5 text-primary" />
+            </div>
+            <div className="mt-1 md:mt-2">
+              <p className="text-[13px] md:text-sm text-muted-foreground font-medium line-clamp-1">Dispatched Qty</p>
+              <p className="text-2xl md:text-3xl font-bold text-foreground mt-0.5 md:mt-1">
+                {kpis.dispatchQty > 0 ? `${kpis.dispatchQty.toLocaleString()} kg` : "—"}
+              </p>
+            </div>
+          </div>
+        )
+      },
+      {
+        id: "pendingRepeat",
+        node: (
+          <div 
+            key="pendingRepeat" 
+            className="kpi-card col-span-1 flex flex-col gap-1.5 md:gap-2 cursor-pointer hover:border-primary/50 transition-colors"
+            onClick={() => setShowRepeatOrdersDialog(true)}
+          >
+            <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-indigo-500/10 flex items-center justify-center shrink-0">
+              <Repeat className="w-4 h-4 md:w-5 md:h-5 text-indigo-500" />
+            </div>
+            <div className="mt-1 md:mt-2">
+              <p className="text-[13px] md:text-sm text-muted-foreground font-medium line-clamp-1">Pending Repeat</p>
+              <p className="text-2xl md:text-3xl font-bold text-foreground mt-0.5 md:mt-1">
+                {kpis.pendingRepeatOrdersList.length}
+              </p>
+            </div>
+          </div>
+        )
+      }
+    ];
+
+    if (isSales) {
+      return all.filter(k => k.id === "newLeads" || k.id === "newCustomers");
+    }
+    if (isWorker) {
+      return all.filter(k => k.id === "pendingOrders" || k.id === "inProduction" || k.id === "pendingRepeat");
+    }
+    return all;
+  }, [kpis, isSales, isWorker]);
+
+  const gridColsClass = useMemo(() => {
+    if (isSales) return "grid-cols-2 lg:grid-cols-2 xl:grid-cols-2";
+    if (isWorker) return "grid-cols-2 lg:grid-cols-3 xl:grid-cols-3";
+    return "grid-cols-2 lg:grid-cols-3 xl:grid-cols-6";
+  }, [isSales, isWorker]);
+
+  const alertModuleMap: Record<string, string> = {
+    low_stock: "Inventory",
+    order_unattended: "Orders",
+    no_dispatch: "Orders",
+    priority_unattended: "Orders",
+    repeat_customer_order: "Orders",
+    lead_alert: "Leads",
+  };
+
+  const filteredAlerts = useMemo(() => {
+    return sortedAlerts.filter((alert) => {
+      if (isOwnerAdmin()) return true;
+      const moduleName = alertModuleMap[alert.type];
+      if (!moduleName) return true;
+      if (isSales && moduleName === "Orders") return false;
+      const access = currentUser?.moduleAccess.find((m) => m.moduleName === moduleName);
+      return access?.write === true;
+    });
+  }, [sortedAlerts, currentUser, isOwnerAdmin, isSales]);
+
   return (
     <div className="w-full">
       {/* ─── Page Header & Global Filter ─────────────────────────────────────────────────── */}
@@ -268,7 +390,7 @@ export default function Dashboard() {
           
           <div className="flex items-center gap-2 md:gap-3 shrink-0">
             <Select value={dateFilter} onValueChange={(v: any) => setDateFilter(v)}>
-              <SelectTrigger className="w-[100px] sm:w-[130px] md:w-36 h-9 text-xs sm:text-sm bg-card shadow-sm border-border/60">
+              <SelectTrigger className="w-[120px] sm:w-[130px] md:w-36 h-9 text-xs sm:text-sm bg-card shadow-sm border-border/60">
                 <SelectValue placeholder="Select period" />
               </SelectTrigger>
               <SelectContent>
@@ -310,65 +432,8 @@ export default function Dashboard() {
       </div>
 
       <div className="px-4 md:px-6 space-y-6 pb-8">
-        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 md:gap-4">
-          {/* New Leads */}
-          <div className="kpi-card col-span-1 flex flex-col gap-1.5 md:gap-2 relative overflow-hidden">
-            <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
-              <Zap className="w-4 h-4 md:w-5 md:h-5 text-emerald-500" />
-            </div>
-            <div className="mt-1 md:mt-2">
-              <p className="text-[13px] md:text-sm text-muted-foreground font-medium line-clamp-1">New Leads</p>
-              <p className="text-2xl md:text-3xl font-bold text-foreground mt-0.5 md:mt-1">{kpis.newLeadsCount}</p>
-            </div>
-          </div>
-
-          {/* New Customers */}
-          <div className="kpi-card col-span-1 flex flex-col gap-1.5 md:gap-2">
-            <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0">
-              <Users className="w-4 h-4 md:w-5 md:h-5 text-blue-500" />
-            </div>
-            <div className="mt-1 md:mt-2">
-              <p className="text-[13px] md:text-sm text-muted-foreground font-medium line-clamp-1">New Customers</p>
-              <p className="text-2xl md:text-3xl font-bold text-foreground mt-0.5 md:mt-1">
-                {kpis.newCustomers}
-              </p>
-            </div>
-          </div>
-
-          {/* Pending Orders */}
-          <div className="kpi-card col-span-1 flex flex-col gap-1.5 md:gap-2">
-            <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-warning/10 flex items-center justify-center shrink-0">
-              <ShoppingCart className="w-4 h-4 md:w-5 md:h-5 text-warning" />
-            </div>
-            <div className="mt-1 md:mt-2">
-              <p className="text-[13px] md:text-sm text-muted-foreground font-medium line-clamp-1">Pending Orders</p>
-              <p className="text-2xl md:text-3xl font-bold text-foreground mt-0.5 md:mt-1">{kpis.pendingOrders}</p>
-            </div>
-          </div>
-
-          {/* In Production */}
-          <div className="kpi-card col-span-1 flex flex-col gap-1.5 md:gap-2">
-            <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-success/10 flex items-center justify-center shrink-0">
-              <Factory className="w-4 h-4 md:w-5 md:h-5 text-success" />
-            </div>
-            <div className="mt-1 md:mt-2">
-              <p className="text-[13px] md:text-sm text-muted-foreground font-medium line-clamp-1">In Production</p>
-              <p className="text-2xl md:text-3xl font-bold text-foreground mt-0.5 md:mt-1">{kpis.inProduction}</p>
-            </div>
-          </div>
-
-          {/* Dispatch */}
-          <div className="kpi-card col-span-1 flex flex-col gap-1.5 md:gap-2">
-            <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-              <TrendingUp className="w-4 h-4 md:w-5 md:h-5 text-primary" />
-            </div>
-            <div className="mt-1 md:mt-2">
-              <p className="text-[13px] md:text-sm text-muted-foreground font-medium line-clamp-1">Dispatched Qty</p>
-              <p className="text-2xl md:text-3xl font-bold text-foreground mt-0.5 md:mt-1">
-                {kpis.dispatchQty > 0 ? `${kpis.dispatchQty.toLocaleString()} kg` : "—"}
-              </p>
-            </div>
-          </div>
+        <div className={cn("grid gap-3 md:gap-4", gridColsClass)}>
+          {visibleKpis.map((k) => k.node)}
         </div>
 
         {/* ─── Alerts + Chart ───────────────────────────────────────────────── */}
@@ -382,7 +447,7 @@ export default function Dashboard() {
               </Link>
             </div>
             <div className="space-y-2">
-              {sortedAlerts.slice(0, 6).map((alert) => {
+              {filteredAlerts.slice(0, 6).map((alert) => {
                 const cfg = alertConfig[alert.type] || alertConfig.other;
                 const Icon = cfg.icon;
                 return (
@@ -417,169 +482,143 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Leads Chart */}
-          <div className="xl:col-span-3">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="section-title">Lead Summary</h2>
-              <Select value={leadDateFilter} onValueChange={(v: any) => setLeadDateFilter(v)}>
-                <SelectTrigger className="w-[100px] h-8 text-xs">
+          {/* Dispatch Chart */}
+          {(isOwnerAdmin() || currentUser?.designation === "manager") && (
+            <div className="xl:col-span-3">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="section-title">Dispatch Summary</h2>
+              <Select value={dispatchView} onValueChange={(v: any) => setDispatchView(v)}>
+                <SelectTrigger className="w-36 h-8 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="today">Today</SelectItem>
-                  <SelectItem value="week">This Week</SelectItem>
-                  <SelectItem value="month">This Month</SelectItem>
-                  <SelectItem value="year">This Year</SelectItem>
-                  <SelectItem value="custom">Custom Date</SelectItem>
+                  <SelectItem value="monthly">Month-wise</SelectItem>
+                  <SelectItem value="weekly">This Week</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            
-            {leadDateFilter === "custom" && (
-              <div className="flex items-center gap-2 mb-4 justify-end">
-                <input
-                  type="date"
-                  className="h-8 rounded-md border border-input bg-card px-2 py-1 text-xs shadow-sm transition-colors w-full max-w-[120px]"
-                  value={leadCustomStartDate}
-                  onChange={(e) => setLeadCustomStartDate(e.target.value)}
-                />
-                <span className="text-muted-foreground text-xs">to</span>
-                <input
-                  type="date"
-                  className="h-8 rounded-md border border-input bg-card px-2 py-1 text-xs shadow-sm transition-colors w-full max-w-[120px]"
-                  value={leadCustomEndDate}
-                  onChange={(e) => setLeadCustomEndDate(e.target.value)}
-                />
-              </div>
-            )}
 
             <div className="card-elevated p-4 md:p-6">
-              <div className="md:hidden overflow-x-auto pb-2">
-                <div style={{ minWidth: 400 }}>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <BarChart data={leadsData} barSize={32}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                      <XAxis dataKey="label" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} width={30} allowDecimals={false} />
-                      <Tooltip cursor={{ fill: "hsl(var(--secondary))" }} content={({ active, payload, label }: any) => {
-                        if (active && payload && payload.length) {
-                          return (
-                            <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
-                              <p className="text-xs text-muted-foreground mb-1">{label}</p>
-                              <p className="text-sm font-bold text-foreground">{payload[0].value} Leads</p>
-                            </div>
-                          );
-                        }
-                        return null;
-                      }} />
-                      <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
+              {/* Mobile horizontal scroll for monthly */}
+              {dispatchView === "monthly" && (
+                <div className="md:hidden overflow-x-auto pb-2">
+                  <div style={{ minWidth: 520 }}>
+                    <ResponsiveContainer width="100%" height={220}>
+                      <BarChart data={dispatchData} barSize={24}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                        <XAxis dataKey="label" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} width={50} tickFormatter={(v) => v === 0 ? "0" : `${v/1000}k`} />
+                        <Tooltip content={<CustomTooltip />} cursor={{ fill: "hsl(var(--secondary))" }} />
+                        <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
-              </div>
+              )}
 
+              {/* Desktop full width */}
               <div className="hidden md:block">
                 <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={leadsData} barSize={40}>
+                  <BarChart data={dispatchData} barSize={dispatchView === "weekly" ? 32 : 28}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
                     <XAxis dataKey="label" tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} width={40} allowDecimals={false} />
-                    <Tooltip cursor={{ fill: "hsl(var(--secondary))" }} content={({ active, payload, label }: any) => {
-                      if (active && payload && payload.length) {
-                        return (
-                          <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
-                            <p className="text-xs text-muted-foreground mb-1">{label}</p>
-                            <p className="text-sm font-bold text-foreground">{payload[0].value} Leads</p>
-                          </div>
-                        );
-                      }
-                      return null;
-                    }} />
-                    <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-
-              <div className="mt-3 pt-3 border-t border-border/60 flex items-center justify-between text-xs text-muted-foreground">
-                <span>Total leads in selected period</span>
-                <span className="font-medium text-foreground">
-                  {leadsData.reduce((s, d) => s + d.value, 0)} leads
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ─── Dispatch Chart (Moved Below) ─────────────────────────────────── */}
-        <div className="mt-4 md:mt-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="section-title">Dispatch Summary</h2>
-            <Select value={dispatchView} onValueChange={(v: any) => setDispatchView(v)}>
-              <SelectTrigger className="w-36 h-8 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="monthly">Month-wise</SelectItem>
-                <SelectItem value="weekly">This Week</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="card-elevated p-4 md:p-6">
-            {/* Mobile horizontal scroll for monthly */}
-            {dispatchView === "monthly" && (
-              <div className="md:hidden overflow-x-auto pb-2">
-                <div style={{ minWidth: 520 }}>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <BarChart data={dispatchData} barSize={24}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                      <XAxis dataKey="label" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} width={50} tickFormatter={(v) => v === 0 ? "0" : `${v/1000}k`} />
-                      <Tooltip content={<CustomTooltip />} cursor={{ fill: "hsl(var(--secondary))" }} />
-                      <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            )}
-
-            {/* Desktop full width */}
-            <div className="hidden md:block">
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={dispatchData} barSize={dispatchView === "weekly" ? 32 : 28}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} width={56} tickFormatter={(v) => v === 0 ? "0" : `${(v/1000).toFixed(v >= 1000 ? 1 : 0)}k`} />
-                  <Tooltip content={<CustomTooltip />} cursor={{ fill: "hsl(var(--secondary))" }} />
-                  <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-
-            {/* Mobile weekly view */}
-            {dispatchView === "weekly" && (
-              <div className="md:hidden">
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={dispatchData} barSize={28}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                    <XAxis dataKey="label" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} width={46} tickFormatter={(v) => v === 0 ? "0" : `${v/1000}k`} />
+                    <YAxis tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} width={56} tickFormatter={(v) => v === 0 ? "0" : `${(v/1000).toFixed(v >= 1000 ? 1 : 0)}k`} />
                     <Tooltip content={<CustomTooltip />} cursor={{ fill: "hsl(var(--secondary))" }} />
                     <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-            )}
 
-            <div className="mt-3 pt-3 border-t border-border/60 flex items-center justify-between text-xs text-muted-foreground">
-              <span>Total dispatched qty (kg) from dispatched orders</span>
-              <span className="font-medium text-foreground">
-                {dispatchData.reduce((s, d) => s + d.value, 0).toLocaleString()} kg
-              </span>
+              {/* Mobile weekly view */}
+              {dispatchView === "weekly" && (
+                <div className="md:hidden">
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={dispatchData} barSize={28}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} width={46} tickFormatter={(v) => v === 0 ? "0" : `${v/1000}k`} />
+                      <Tooltip content={<CustomTooltip />} cursor={{ fill: "hsl(var(--secondary))" }} />
+                      <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              <div className="mt-3 pt-3 border-t border-border/60 flex items-center justify-between text-xs text-muted-foreground">
+                <span>Total dispatched qty (kg) from dispatched orders</span>
+                <span className="font-medium text-foreground">
+                  {dispatchData.reduce((s, d) => s + d.value, 0).toLocaleString()} kg
+                </span>
+              </div>
             </div>
           </div>
-        </div>
+          )}
       </div>
+      </div>
+
+      <Dialog open={showRepeatOrdersDialog} onOpenChange={setShowRepeatOrdersDialog}>
+        <DialogContent 
+          className="max-w-[100vw] w-screen h-[100dvh] max-h-screen m-0 p-4 md:p-6 rounded-none border-0 overflow-hidden flex flex-col"
+          onInteractOutside={(e) => e.preventDefault()}
+        >
+          <DialogHeader>
+            <DialogTitle>Pending Repeat Orders</DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="flex-1 mt-4 border rounded-md p-4 bg-muted/20">
+            {kpis.pendingRepeatOrdersList.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-8 text-center">No pending repeat orders.</p>
+            ) : (
+              <div className="space-y-3">
+                {kpis.pendingRepeatOrdersList.map(order => (
+                  <div key={order.id} className="p-4 bg-card border border-border rounded-lg flex flex-col gap-3 relative">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <h4 className="font-bold text-foreground text-sm">{order.supplierName}</h4>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Scheduled: {order.repeatOrder?.recurrenceType === "weekly" 
+                            ? `Every week on ${order.repeatOrder.weekDays?.map(d => ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][d]).join(", ") || "N/A"}`
+                            : `Every month on ${order.repeatOrder?.startDate ? formatDate(new Date(order.repeatOrder.startDate), "do") : "N/A"}`}
+                        </p>
+                      </div>
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        className="h-7 text-xs px-3 bg-primary/10 text-primary border-primary/20 hover:bg-primary/20"
+                        onClick={() => markRepeatOrderReceived(order.id, new Date())}
+                      >
+                        Mark Received
+                      </Button>
+                    </div>
+
+                    <div className="text-sm text-muted-foreground">
+                      <p><span className="font-medium text-foreground">Products:</span> {order.products.map(p => p.productName).join(", ")}</p>
+                      <p className="mt-0.5"><span className="font-medium text-foreground">Total Qty:</span> {order.products.reduce((acc, p) => acc + p.quantity, 0)} kg</p>
+                    </div>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm" className="w-full text-xs mt-1">View Previous 2 Orders</Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="w-80">
+                        {orders.filter(o => o.supplierId === order.supplierId && o.id !== order.id).sort((a,b) => b.createdAt.getTime() - a.createdAt.getTime()).slice(0, 2).map((prev, idx) => (
+                          <div key={prev.id} className="px-3 py-2 text-sm border-b border-border last:border-0">
+                            <p className="font-medium">{formatDate(prev.createdAt, "MMM d, yyyy")}</p>
+                            <p className="text-xs text-muted-foreground">{prev.products.map(p => p.productName).join(", ")}</p>
+                            <p className="text-xs text-muted-foreground font-medium mt-0.5">Qty: {prev.products.reduce((acc, p) => acc + p.quantity, 0)} kg</p>
+                          </div>
+                        ))}
+                        {orders.filter(o => o.supplierId === order.supplierId && o.id !== order.id).length === 0 && (
+                          <div className="px-3 py-4 text-center text-sm text-muted-foreground">No previous orders</div>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

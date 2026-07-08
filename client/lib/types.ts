@@ -34,6 +34,7 @@ export interface Lead {
   notes?: string;
   statusUpdatedAt?: Date;
   scheduledAlert?: Date;
+  scheduledNote?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -75,10 +76,11 @@ export interface RepeatOrderConfig {
   startDate?: Date;
   recurrenceType?: "monthly" | "weekly";
   weekDays?: number[]; // 0-6 for Mon-Sun, only if weekly
+  lastReceived?: Date;
 }
 
 // Employee Types
-export type EmployeeDesignation = "owner" | "salesperson" | "worker" | "admin" | string;
+export type EmployeeDesignation = "owner" | "sales" | "manager" | "worker" | "admin" | string;
 
 export interface ModuleAccess {
   moduleName: string;

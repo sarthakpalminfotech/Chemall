@@ -42,6 +42,7 @@ interface AppActions {
   // Orders
   addOrder: (order: Omit<Order, "id" | "createdAt" | "updatedAt">) => Promise<Order>;
   updateOrder: (id: string, updates: Partial<Order>) => Promise<void>;
+  updateOrderFull: (id: string, data: Omit<Order, "id" | "createdAt" | "updatedAt">) => Promise<void>;
   markInProduction: (
     orderId: string,
     dispatchContainers: DispatchContainerItem[],
@@ -50,6 +51,7 @@ interface AppActions {
   ) => Promise<{ batchNumber: string; stockWarnings: string[] }>;
   assignPriority: (orderId: string, priority: number | undefined) => Promise<void>;
   markAsDispatched: (orderId: string) => Promise<void>;
+  markRepeatOrderReceived: (orderId: string, date: Date) => Promise<void>;
 
   // Employees
   addEmployee: (employee: Omit<Employee, "id" | "createdAt" | "updatedAt">) => Promise<Employee>;
@@ -289,6 +291,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               startDate: o.repeat_start_date ? new Date(o.repeat_start_date) : undefined,
               recurrenceType: o.recurrence_type,
               weekDays: o.recurrence_weekdays || undefined,
+              lastReceived: o.repeat_last_received ? new Date(o.repeat_last_received) : undefined,
             }
           : undefined,
         products: (o.order_products || []).map((op: any) => ({
@@ -312,25 +315,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
         createdAt: new Date(l.created_at),
       }));
       setSystemLogs(mappedSystemLogs);
+      // 11. Leads
+      const { data: leadsData } = await supabase.from("leads").select("*").order("created_at", { ascending: false });
+      const mappedLeads: Lead[] = (leadsData || []).map((l: any) => ({
+        id: l.id,
+        companyName: l.company_name,
+        contactNumber: l.contact_number,
+        contactPersonName: l.contact_person_name || undefined,
+        contactPersonNumber: l.contact_person_number || undefined,
+        address: l.address || undefined,
+        source: l.source as LeadSource,
+        intensity: l.intensity as LeadIntensity,
+        status: l.status as LeadStatus,
+        statusReason: l.status_reason || undefined,
+        products: l.products || [],
+        quantity: l.quantity ? Number(l.quantity) : undefined,
+        notes: l.notes || undefined,
+        statusUpdatedAt: l.status_updated_at ? new Date(l.status_updated_at) : undefined,
+        scheduledAlert: l.scheduled_alert ? new Date(l.scheduled_alert) : undefined,
+        scheduledNote: l.scheduled_note || undefined,
+        createdAt: new Date(l.created_at),
+        updatedAt: new Date(l.updated_at),
+      }));
+      setLeads(mappedLeads);
     } catch (err) {
       console.error("Error loading Supabase data:", err);
     } finally {
-      // Load leads from localStorage for now
-      try {
-        const storedLeads = localStorage.getItem("chemall_leads");
-        if (storedLeads) {
-          const parsed = JSON.parse(storedLeads);
-          setLeads(parsed.map((l: any) => ({
-            ...l,
-            createdAt: new Date(l.createdAt),
-            updatedAt: new Date(l.updatedAt),
-            statusUpdatedAt: l.statusUpdatedAt ? new Date(l.statusUpdatedAt) : new Date(l.createdAt),
-            scheduledAlert: l.scheduledAlert ? new Date(l.scheduledAlert) : undefined
-          })));
-        }
-      } catch (e) {
-        console.error("Error loading leads from local storage", e);
-      }
       setLoading(false);
     }
   };
@@ -395,14 +405,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
       }
       
-      // 3. "paused/hold" scheduled alert
-      if (lead.status === "paused/hold" && lead.scheduledAlert) {
+      // 3. Scheduled follow-up alert
+      if (lead.scheduledAlert && ["new", "in discussion", "paused/hold"].includes(lead.status)) {
         if (now >= lead.scheduledAlert) {
           newLeadAlerts.push({
             id: `lead_alert_scheduled_${lead.id}`,
             type: "lead_alert",
             title: "Scheduled Lead Follow-up",
-            message: `Scheduled follow-up for ${lead.companyName} is due`,
+            message: `Scheduled follow-up for ${lead.companyName} is due${lead.scheduledNote ? `: ${lead.scheduledNote}` : ""}`,
             timestamp: lead.scheduledAlert,
             read: false,
             relatedLeadId: lead.id,
@@ -574,6 +584,55 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   };
 
+  const updateOrderFull = async (id: string, data: Omit<Order, "id" | "createdAt" | "updatedAt">) => {
+    const { error: orderErr } = await supabase
+      .from("orders")
+      .update({
+        supplier_id: data.supplierId,
+        supplier_name: data.supplierName,
+        currency: data.currency,
+        total_amount: data.totalAmount,
+        order_date: data.date.toISOString().split("T")[0],
+        status: data.status,
+        priority: data.priority || null,
+        notes: data.notes || null,
+        repeat_enabled: data.repeatOrder?.enabled || false,
+        repeat_start_date: data.repeatOrder?.startDate
+          ? data.repeatOrder.startDate.toISOString().split("T")[0]
+          : null,
+        recurrence_type: data.repeatOrder?.recurrenceType || null,
+        recurrence_weekdays: data.repeatOrder?.weekDays || null,
+      })
+      .eq("id", id);
+    if (orderErr) throw orderErr;
+
+    // replace products
+    await supabase.from("order_products").delete().eq("order_id", id);
+    const productInserts = data.products.map((p) => ({
+      order_id: id,
+      product_id: p.productId,
+      product_name: p.productName,
+      quantity: p.quantity,
+      rate_per_kg: p.ratePerKg,
+      previous_rate: p.previousRate || null,
+      currency: data.currency,
+    }));
+    await supabase.from("order_products").insert(productInserts);
+
+    // replace containers
+    await supabase.from("order_preferred_containers").delete().eq("order_id", id);
+    if (data.preferredContainers && data.preferredContainers.length > 0) {
+      const containerInserts = data.preferredContainers.map((ctId) => ({
+        order_id: id,
+        container_type_id: ctId,
+      }));
+      await supabase.from("order_preferred_containers").insert(containerInserts);
+    }
+
+    await refreshData();
+    await addLog("Orders", `Updated order for ${data.supplierName}`);
+  };
+
   const updateOrder = async (id: string, updates: Partial<Order>) => {
     const dbUpdates: any = {};
     if (updates.status) dbUpdates.status = updates.status;
@@ -643,6 +702,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const order = orders.find(o => o.id === orderId);
     const orderRef = order?.batchNumber || (order ? `from ${order.supplierName}` : orderId);
     await addLog("Orders", `Dispatched order ${orderRef}`);
+  };
+
+  const markRepeatOrderReceived = async (orderId: string, date: Date) => {
+    const { error } = await supabase
+      .from("orders")
+      .update({ repeat_last_received: date.toISOString() })
+      .eq("id", orderId);
+    if (error) throw error;
+    await refreshData();
+    const order = orders.find(o => o.id === orderId);
+    if (order) {
+      await addLog("Orders", `Marked repeat order from ${order.supplierName} as received for this cycle`);
+    }
   };
 
   // ── Employees ──────────────────────────────────────────────────────────────
@@ -985,50 +1057,70 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Leads ──────────────────────────────────────────────────────────────────
   const addLead = async (data: Omit<Lead, "id" | "createdAt" | "updatedAt">) => {
-    const newLead: Lead = {
-      ...data,
-      id: crypto.randomUUID(),
-      status: data.status || "new",
-      statusUpdatedAt: new Date(),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+    const { data: newLead, error } = await supabase
+      .from("leads")
+      .insert({
+        company_name: data.companyName,
+        contact_number: data.contactNumber,
+        contact_person_name: data.contactPersonName || null,
+        contact_person_number: data.contactPersonNumber || null,
+        address: data.address || null,
+        source: data.source,
+        intensity: data.intensity,
+        status: data.status || "new",
+        status_reason: data.statusReason || null,
+        products: data.products || [],
+        quantity: data.quantity || null,
+        notes: data.notes || null,
+        status_updated_at: new Date().toISOString(),
+        scheduled_alert: data.scheduledAlert ? data.scheduledAlert.toISOString() : null,
+        scheduled_note: data.scheduledNote || null,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
     
-    setLeads(prev => {
-      const updated = [newLead, ...prev];
-      localStorage.setItem("chemall_leads", JSON.stringify(updated));
-      return updated;
-    });
-    
+    await refreshData();
     await addLog("Leads", `Added lead ${data.companyName}`);
     
-    return newLead;
+    return {
+      ...data,
+      id: newLead.id,
+      createdAt: new Date(newLead.created_at),
+      updatedAt: new Date(newLead.updated_at),
+    };
   };
 
   const updateLead = async (id: string, updates: Partial<Lead>) => {
-    let leadName = "";
-    let statusChange = "";
+    const dbUpdates: any = {};
+    if (updates.companyName) dbUpdates.company_name = updates.companyName;
+    if (updates.contactNumber) dbUpdates.contact_number = updates.contactNumber;
+    if (updates.contactPersonName !== undefined) dbUpdates.contact_person_name = updates.contactPersonName;
+    if (updates.contactPersonNumber !== undefined) dbUpdates.contact_person_number = updates.contactPersonNumber;
+    if (updates.address !== undefined) dbUpdates.address = updates.address;
+    if (updates.source) dbUpdates.source = updates.source;
+    if (updates.intensity) dbUpdates.intensity = updates.intensity;
+    if (updates.status) {
+      dbUpdates.status = updates.status;
+      dbUpdates.status_updated_at = new Date().toISOString();
+    }
+    if (updates.statusReason !== undefined) dbUpdates.status_reason = updates.statusReason;
+    if (updates.products) dbUpdates.products = updates.products;
+    if (updates.quantity !== undefined) dbUpdates.quantity = updates.quantity;
+    if (updates.notes !== undefined) dbUpdates.notes = updates.notes;
+    if (updates.scheduledAlert !== undefined) dbUpdates.scheduled_alert = updates.scheduledAlert ? updates.scheduledAlert.toISOString() : null;
+    if (updates.scheduledNote !== undefined) dbUpdates.scheduled_note = updates.scheduledNote;
+
+    const { error } = await supabase.from("leads").update(dbUpdates).eq("id", id);
+    if (error) throw error;
+
+    await refreshData();
     
-    setLeads(prev => {
-      const updated = prev.map(l => {
-        if (l.id === id) {
-          leadName = l.companyName;
-          if (updates.status && updates.status !== l.status) {
-            statusChange = ` (status changed to ${updates.status})`;
-          }
-          const newStatusUpdatedAt = updates.status && updates.status !== l.status 
-            ? new Date() 
-            : l.statusUpdatedAt;
-          return { ...l, ...updates, updatedAt: new Date(), statusUpdatedAt: newStatusUpdatedAt };
-        }
-        return l;
-      });
-      localStorage.setItem("chemall_leads", JSON.stringify(updated));
-      return updated;
-    });
-    
-    if (leadName) {
-      await addLog("Leads", `Updated lead ${leadName}${statusChange}`);
+    const lead = leads.find(l => l.id === id);
+    if (lead) {
+      const statusChange = updates.status && updates.status !== lead.status ? ` (status changed to ${updates.status})` : "";
+      await addLog("Leads", `Updated lead ${lead.companyName}${statusChange}`);
     }
   };
 
@@ -1072,9 +1164,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     deleteProduct,
     addOrder,
     updateOrder,
+    updateOrderFull,
     markInProduction,
     assignPriority,
     markAsDispatched,
+    markRepeatOrderReceived,
     addEmployee,
     updateEmployee,
     deleteEmployee,

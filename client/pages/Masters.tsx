@@ -47,6 +47,42 @@ function TypeBadge({ type }: { type: string }) {
   );
 }
 
+const getStaticModuleAccess = (designation: string) => {
+  const role = designation.toLowerCase();
+  return MODULES.map(m => {
+    let read = false;
+    let write = false;
+
+    if (role === "owner" || role === "admin") {
+      read = true;
+      write = true;
+    } else if (role === "sales") {
+      if (m === "Dashboard" || m === "Inventory") {
+        read = true;
+        write = false;
+      } else if (["Orders", "Leads", "Notes"].includes(m)) {
+        read = true;
+        write = true;
+      }
+    } else if (role === "manager") {
+      if (["Dashboard", "Orders", "Inventory", "Leads", "Notes"].includes(m)) {
+        read = true;
+        write = true;
+      }
+    } else if (role === "worker") {
+      if (m === "Dashboard") {
+        read = true;
+        write = false;
+      } else if (["Orders", "Inventory", "Notes"].includes(m)) {
+        read = true;
+        write = true;
+      }
+    }
+
+    return { moduleName: m, read, write };
+  });
+};
+
 export default function Masters() {
   const { currentUser, products, employees, suppliers, addProduct, updateProduct, deleteProduct, addEmployee, updateEmployee, deleteEmployee, addSupplier, updateSupplier, deleteSupplier, isOwnerAdmin } = useStore();
   const canWrite = isOwnerAdmin() || currentUser?.moduleAccess.find(m => m.moduleName === "Masters")?.write === true;
@@ -61,6 +97,7 @@ export default function Masters() {
 
   // ── Employee state ───────────────────────────────────────────────────────────
   const [empDialogOpen, setEmpDialogOpen] = useState(false);
+  const [roleInfoOpen, setRoleInfoOpen] = useState(false);
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
   const [empForm, setEmpForm] = useState({
     name: "", phoneNumber: "", address: "", designation: "",
@@ -174,15 +211,16 @@ export default function Masters() {
     if (empForm.password || !editingEmployeeId) {
       if (empForm.password !== empForm.confirmPassword) { setPasswordError("Passwords do not match"); return; }
     }
-    if (!empForm.name.trim() || !empForm.phoneNumber.trim()) return;
+    if (!empForm.name.trim() || !empForm.phoneNumber.trim() || !empForm.designation) {
+      toast({ title: "Validation Error", description: "Name, Phone, and Designation are required.", variant: "destructive" });
+      return;
+    }
     
     // Only check for duplicate phone number if we are adding a new employee, or editing and changing the phone number
     const dupPhone = employees.find(e => e.phoneNumber === empForm.phoneNumber.trim() && e.id !== editingEmployeeId);
     if (dupPhone) { setPasswordError("Phone number already in use"); return; }
 
-    const finalModuleAccess = isOwner 
-      ? MODULES.map(m => ({ moduleName: m, read: true, write: true })) 
-      : MODULES.map(m => ({ moduleName: m, ...empForm.moduleAccess[m] }));
+    const finalModuleAccess = getStaticModuleAccess(empForm.designation);
 
     try {
       if (editingEmployeeId) {
@@ -613,18 +651,85 @@ export default function Masters() {
             <div className="flex items-center justify-between">
               <h2 className="section-title">Employee Master</h2>
               {canWrite && (
-                <Dialog open={empDialogOpen} onOpenChange={(open) => {
-                  setEmpDialogOpen(open);
-                  if (!open) {
-                    setEditingEmployeeId(null);
-                    setEmpForm({ name: "", phoneNumber: "", address: "", designation: "", moduleAccess: MODULES.reduce((acc, m) => ({ ...acc, [m]: { read: false, write: false } }), {}), password: "", confirmPassword: "", showPassword: false });
-                  }
-                }}>
-                  <DialogTrigger asChild>
-                    <Button className="gap-2 shadow-sm" onClick={openAddEmployeeModal}><Plus className="w-4 h-4" /> Add Employee</Button>
-                  </DialogTrigger>
-                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                  <DialogHeader><DialogTitle>{editingEmployeeId ? "Edit Employee" : "Add New Employee"}</DialogTitle></DialogHeader>
+                <div className="flex gap-2">
+                  <Dialog open={roleInfoOpen} onOpenChange={setRoleInfoOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" className="gap-0 sm:gap-2 shadow-sm px-3 sm:px-4">
+                        <Eye className="w-4 h-4" />
+                        <span className="hidden sm:inline">Role Access Info</span>
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+                      <DialogHeader>
+                        <DialogTitle>Role Access Information</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4 pt-2">
+                        <div className="p-3.5 border rounded-xl bg-card space-y-2.5">
+                          <div className="flex items-center gap-2 border-b pb-2">
+                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                            <h4 className="font-bold text-foreground text-sm">Sales</h4>
+                          </div>
+                          <ul className="text-xs space-y-1.5 text-muted-foreground list-disc pl-4">
+                            <li><span className="font-semibold text-foreground">Dashboard:</span> KPIs of New Leads & New Customers only</li>
+                            <li><span className="font-semibold text-foreground">Orders:</span> Full Access</li>
+                            <li><span className="font-semibold text-foreground">Inventory:</span> Read Only</li>
+                            <li><span className="font-semibold text-foreground">Leads:</span> Full Access</li>
+                            <li><span className="font-semibold text-foreground">Notes:</span> Full Access</li>
+                            <li><span className="font-semibold text-foreground">Scan QR:</span> Full Access</li>
+                          </ul>
+                        </div>
+
+                        <div className="p-3.5 border rounded-xl bg-card space-y-2.5">
+                          <div className="flex items-center gap-2 border-b pb-2">
+                            <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+                            <h4 className="font-bold text-foreground text-sm">Manager</h4>
+                          </div>
+                          <ul className="text-xs space-y-1.5 text-muted-foreground list-disc pl-4">
+                            <li><span className="font-semibold text-foreground">Dashboard:</span> Full Access (All KPIs)</li>
+                            <li><span className="font-semibold text-foreground">Orders:</span> Full Access <span className="text-destructive font-medium">(No Priority Settings)</span></li>
+                            <li><span className="font-semibold text-foreground">Inventory:</span> Full Access</li>
+                            <li><span className="font-semibold text-foreground">Leads:</span> Full Access</li>
+                            <li><span className="font-semibold text-foreground">Notes:</span> Full Access</li>
+                            <li><span className="font-semibold text-foreground">Masters:</span> <span className="text-destructive font-medium">No Access</span></li>
+                            <li><span className="font-semibold text-foreground">Logs:</span> <span className="text-destructive font-medium">No Access</span></li>
+                            <li><span className="font-semibold text-foreground">Scan QR:</span> Full Access</li>
+                          </ul>
+                        </div>
+
+                        <div className="p-3.5 border rounded-xl bg-card space-y-2.5">
+                          <div className="flex items-center gap-2 border-b pb-2">
+                            <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" />
+                            <h4 className="font-bold text-foreground text-sm">Worker</h4>
+                          </div>
+                          <ul className="text-xs space-y-1.5 text-muted-foreground list-disc pl-4">
+                            <li><span className="font-semibold text-foreground">Dashboard:</span> KPIs of Pending Orders, In Production & Pending Repeat only</li>
+                            <li><span className="font-semibold text-foreground">Orders:</span> Full Access</li>
+                            <li><span className="font-semibold text-foreground">Inventory:</span> Full Access</li>
+                            <li><span className="font-semibold text-foreground">Notes:</span> Full Access</li>
+                            <li><span className="font-semibold text-foreground">Scan QR:</span> Full Access</li>
+                            <li><span className="font-semibold text-foreground">Leads, Masters, Logs:</span> <span className="text-destructive font-medium">No Access</span></li>
+                          </ul>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+
+                  <Dialog open={empDialogOpen} onOpenChange={(open) => {
+                    setEmpDialogOpen(open);
+                    if (!open) {
+                      setEditingEmployeeId(null);
+                      setEmpForm({ name: "", phoneNumber: "", address: "", designation: "", moduleAccess: MODULES.reduce((acc, m) => ({ ...acc, [m]: { read: false, write: false } }), {}), password: "", confirmPassword: "", showPassword: false });
+                    }
+                  }}>
+                    <DialogTrigger asChild>
+                      <Button className="gap-0 sm:gap-2 shadow-sm px-3 sm:px-4" onClick={openAddEmployeeModal}>
+                        <Plus className="w-4 h-4" />
+                        <span className="hidden sm:inline">Add Employee</span>
+                        <span className="inline sm:hidden">Add</span>
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                      <DialogHeader><DialogTitle>{editingEmployeeId ? "Edit Employee" : "Add New Employee"}</DialogTitle></DialogHeader>
                   <div className="space-y-5">
                     <div className="pb-4 border-b border-border">
                       <h3 className="text-sm font-semibold text-foreground mb-3">Basic Details</h3>
@@ -632,38 +737,60 @@ export default function Masters() {
                         <div><Label className="field-label">Name *</Label><Input value={empForm.name} onChange={e => setEmpForm(f => ({ ...f, name: e.target.value }))} placeholder="Full name" /></div>
                         <div><Label className="field-label">Phone (Username) *</Label><Input value={empForm.phoneNumber} onChange={e => setEmpForm(f => ({ ...f, phoneNumber: e.target.value }))} placeholder="+91-..." /></div>
                         <div><Label className="field-label">Address</Label><Input value={empForm.address} onChange={e => setEmpForm(f => ({ ...f, address: e.target.value }))} placeholder="Address" /></div>
-                        <div><Label className="field-label">Designation</Label><Input value={empForm.designation} onChange={e => setEmpForm(f => ({ ...f, designation: e.target.value }))} placeholder="e.g., Manager" /></div>
+                        <div>
+                          <Label className="field-label">Designation *</Label>
+                          <Select 
+                            value={empForm.designation} 
+                            onValueChange={v => setEmpForm(f => ({ ...f, designation: v }))}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Select designation" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="sales">Sales</SelectItem>
+                              <SelectItem value="manager">Manager</SelectItem>
+                              <SelectItem value="worker">Worker</SelectItem>
+                              {(empForm.designation === "owner" || empForm.designation === "admin") && (
+                                <SelectItem value={empForm.designation} disabled className="capitalize">
+                                  {empForm.designation}
+                                </SelectItem>
+                              )}
+                            </SelectContent>
+                          </Select>
+                        </div>
                       </div>
                     </div>
 
-                    <div className="pb-4 border-b border-border">
-                      <h3 className="text-sm font-semibold text-foreground mb-3">Module Access</h3>
-                      <div className="space-y-1.5">
-                        <div className="grid grid-cols-3 gap-2 text-xs font-medium text-muted-foreground pb-2">
-                          <span>Module</span><span>Read</span><span>Write</span>
+                    {/* Preview of Permissions */}
+                    {empForm.designation && (
+                      <div className="pb-4 border-b border-border">
+                        <h3 className="text-sm font-semibold text-foreground mb-3">Assigned Permissions Preview</h3>
+                        <div className="bg-secondary/40 rounded-lg p-3 space-y-2">
+                          {getStaticModuleAccess(empForm.designation).map(ma => {
+                            if (!ma.read) return null;
+                            return (
+                              <div key={ma.moduleName} className="flex items-center justify-between text-xs">
+                                <span className="font-medium text-foreground">{ma.moduleName}</span>
+                                <span className={cn(
+                                  "px-2 py-0.5 rounded font-semibold",
+                                  ma.write ? "bg-success/15 text-success" : "bg-blue-500/15 text-blue-500"
+                                )}>
+                                  {ma.write ? "Full Access" : "Read Only"}
+                                </span>
+                              </div>
+                            );
+                          })}
+                          {empForm.designation.toLowerCase() !== "owner" && empForm.designation.toLowerCase() !== "admin" && (
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-medium text-foreground">Scan QR</span>
+                              <span className="px-2 py-0.5 rounded font-semibold bg-success/15 text-success">
+                                Full Access
+                              </span>
+                            </div>
+                          )}
                         </div>
-                        {MODULES.map(mod => (
-                          <div key={mod} className="grid grid-cols-3 gap-2 items-center py-1.5 rounded-lg hover:bg-secondary/50 px-1">
-                            <span className="text-sm font-medium">{mod}</span>
-                            <Checkbox checked={empForm.moduleAccess[mod]?.read} onCheckedChange={v => setEmpForm(f => ({ ...f, moduleAccess: { ...f.moduleAccess, [mod]: { ...f.moduleAccess[mod], read: v as boolean } } }))} />
-                            <Checkbox checked={empForm.moduleAccess[mod]?.write} onCheckedChange={v => {
-                              const isChecked = v as boolean;
-                              setEmpForm(f => ({ 
-                                ...f, 
-                                moduleAccess: { 
-                                  ...f.moduleAccess, 
-                                  [mod]: { 
-                                    ...f.moduleAccess[mod], 
-                                    write: isChecked,
-                                    read: isChecked ? true : f.moduleAccess[mod]?.read 
-                                  } 
-                                } 
-                              }));
-                            }} />
-                          </div>
-                        ))}
                       </div>
-                    </div>
+                    )}
 
                     <div>
                       <h3 className="text-sm font-semibold text-foreground mb-3">Login Credentials</h3>
@@ -690,8 +817,9 @@ export default function Masters() {
                   </div>
                 </DialogContent>
               </Dialog>
-              )}
             </div>
+          )}
+        </div>
 
             <div className="space-y-2.5">
               {employees.filter(e => e.name.toLowerCase().includes(searchQuery.toLowerCase())).map(emp => (

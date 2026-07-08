@@ -1,5 +1,5 @@
-import { useState, useMemo, useRef, useCallback } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useStore } from "@/lib/store";
 import { Order, ContainerType } from "@/lib/types";
 import {
@@ -248,6 +248,17 @@ export default function Orders() {
     setInProductionModalOpen(true);
   };
 
+  const [searchParams] = useSearchParams();
+  useEffect(() => {
+    const markOrderId = searchParams.get("markInProduction");
+    if (markOrderId && orders.length > 0) {
+      const orderToMark = orders.find(o => o.id === markOrderId);
+      if (orderToMark && orderToMark.status === "pending") {
+        openProductionModal(orderToMark);
+      }
+    }
+  }, [searchParams, orders]);
+
   const updateContainerCount = (productId: string, containerTypeId: string, count: number) => {
     setProductionData((prev) => {
       const existingIdx = prev.dispatchContainers.findIndex(
@@ -469,18 +480,10 @@ export default function Orders() {
                 </button>
               </span>
             )}
-            {filters.dateFrom && (
+            {(filters.dateFrom || filters.dateTo) && (
               <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-primary/10 text-primary rounded-full text-xs font-medium border border-primary/20">
-                From: {filters.dateFrom}
-                <button onClick={() => setFilters({ ...filters, dateFrom: "" })} className="ml-0.5 hover:opacity-60">
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            )}
-            {filters.dateTo && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-primary/10 text-primary rounded-full text-xs font-medium border border-primary/20">
-                To: {filters.dateTo}
-                <button onClick={() => setFilters({ ...filters, dateTo: "" })} className="ml-0.5 hover:opacity-60">
+                Date: {filters.dateFrom || "Any"} - {filters.dateTo || "Any"}
+                <button onClick={() => setFilters({ ...filters, dateFrom: "", dateTo: "" })} className="ml-0.5 hover:opacity-60">
                   <X className="w-3 h-3" />
                 </button>
               </span>
@@ -565,7 +568,7 @@ export default function Orders() {
 
                     {/* Meta row */}
                     <div className="flex flex-wrap items-center gap-3 mt-2.5 text-xs text-muted-foreground">
-                      <span className="font-medium">{order.products.reduce((s, p) => s + p.quantity, 0).toLocaleString()} kg</span>
+                      <span className="font-medium">Total: {order.products.reduce((s, p) => s + p.quantity, 0).toLocaleString()} kg</span>
                       <span className="text-foreground font-semibold">₹{order.totalAmount.toLocaleString()}</span>
                       <span>{formatDate(new Date(order.date), "dd MMM yyyy")}</span>
                     </div>

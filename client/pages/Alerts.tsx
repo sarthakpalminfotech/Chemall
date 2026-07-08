@@ -21,8 +21,9 @@ export default function Alerts() {
 
   const hasAccess = (moduleName: string) => {
     if (isOwnerAdmin()) return true;
+    if (currentUser?.designation === "sales" && moduleName === "Orders") return false;
     const access = currentUser?.moduleAccess.find(m => m.moduleName === moduleName);
-    return access?.read === true || access?.write === true;
+    return access?.write === true;
   };
 
   const lowStockAlerts = useMemo(() => {

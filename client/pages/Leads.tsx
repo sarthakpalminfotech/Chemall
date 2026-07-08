@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
@@ -44,6 +44,7 @@ export default function Leads() {
   const [newStatus, setNewStatus] = useState<LeadStatus>("new");
   const [statusReason, setStatusReason] = useState("");
   const [scheduledAlertDate, setScheduledAlertDate] = useState("");
+  const [scheduledNote, setScheduledNote] = useState("");
 
   const allSources = Array.from(new Set(leads.map(l => l.source)));
   const allProductIds = Array.from(new Set(leads.flatMap(l => l.products)));
@@ -51,7 +52,75 @@ export default function Leads() {
 
   const allStatuses: LeadStatus[] = ["new", "in discussion", "paused/hold", "won", "lost", "disqualified"];
 
-  const filteredLeads = leads.filter(
+  const [dateFilterType, setDateFilterType] = useState("all");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+
+  const handleDateFilterChange = (val: string) => {
+    setDateFilterType(val);
+    const now = new Date();
+    
+    const toLocalISO = (d: Date) => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    if (val === "today") {
+      const todayStr = toLocalISO(now);
+      setStartDate(todayStr);
+      setEndDate(todayStr);
+    } else if (val === "week") {
+      const day = now.getDay();
+      const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+      const startOfWeek = new Date(now.getFullYear(), now.getMonth(), diff);
+      const endOfWeek = new Date(startOfWeek);
+      endOfWeek.setDate(startOfWeek.getDate() + 6);
+      setStartDate(toLocalISO(startOfWeek));
+      setEndDate(toLocalISO(endOfWeek));
+    } else if (val === "month") {
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      setStartDate(toLocalISO(startOfMonth));
+      setEndDate(toLocalISO(endOfMonth));
+    } else if (val === "year") {
+      const startOfYear = new Date(now.getFullYear(), 0, 1);
+      const endOfYear = new Date(now.getFullYear(), 11, 31);
+      setStartDate(toLocalISO(startOfYear));
+      setEndDate(toLocalISO(endOfYear));
+    } else if (val === "all") {
+      setStartDate("");
+      setEndDate("");
+    }
+  };
+
+  const filteredByDateLeads = useMemo(() => {
+    let result = leads;
+    if (startDate || endDate) {
+      result = result.filter(l => {
+        const leadDate = new Date(l.createdAt);
+        const start = startDate ? new Date(startDate) : new Date(0);
+        const end = endDate ? new Date(endDate) : new Date(8640000000000000);
+        end.setHours(23, 59, 59, 999);
+        return leadDate >= start && leadDate <= end;
+      });
+    }
+    return result;
+  }, [leads, startDate, endDate]);
+
+  const kpiCounts = useMemo(() => {
+    return {
+      new: filteredByDateLeads.filter(l => l.status === "new").length,
+      inDiscussion: filteredByDateLeads.filter(l => l.status === "in discussion").length,
+      paused: filteredByDateLeads.filter(l => l.status === "paused/hold").length,
+      won: filteredByDateLeads.filter(l => l.status === "won").length,
+      lost: filteredByDateLeads.filter(l => l.status === "lost").length,
+      disqualified: filteredByDateLeads.filter(l => l.status === "disqualified").length,
+    };
+  }, [filteredByDateLeads]);
+
+  const filteredLeads = filteredByDateLeads.filter(
     (l) => {
       const matchesSearch = l.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                             (l.contactPersonName && l.contactPersonName.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -67,13 +136,17 @@ export default function Leads() {
   const activeFiltersCount = (filterSource !== "all" ? 1 : 0) + 
                              (filterIntensity !== "all" ? 1 : 0) + 
                              (filterProduct !== "all" ? 1 : 0) + 
-                             (filterStatuses.length > 0 ? 1 : 0);
+                             (filterStatuses.length > 0 ? 1 : 0) +
+                             (startDate || endDate ? 1 : 0);
 
   const clearFilters = () => {
     setFilterSource("all");
     setFilterIntensity("all");
     setFilterProduct("all");
     setFilterStatuses([]);
+    setDateFilterType("all");
+    setStartDate("");
+    setEndDate("");
   };
 
   const toggleStatusFilter = (status: LeadStatus) => {
@@ -88,6 +161,7 @@ export default function Leads() {
     setNewStatus(lead.status);
     setStatusReason(lead.statusReason || "");
     setScheduledAlertDate(lead.scheduledAlert ? new Date(lead.scheduledAlert.getTime() - lead.scheduledAlert.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : "");
+    setScheduledNote(lead.scheduledNote || "");
     setStatusModalOpen(true);
   };
 
@@ -102,7 +176,8 @@ export default function Leads() {
     await updateLead(selectedLead.id, {
       status: newStatus,
       statusReason: statusReason.trim() || undefined,
-      scheduledAlert: (newStatus === "paused/hold" && scheduledAlertDate) ? new Date(scheduledAlertDate) : undefined
+      scheduledAlert: ((newStatus === "new" || newStatus === "in discussion" || newStatus === "paused/hold") && scheduledAlertDate) ? new Date(scheduledAlertDate) : undefined,
+      scheduledNote: ((newStatus === "new" || newStatus === "in discussion" || newStatus === "paused/hold") && scheduledNote.trim()) ? scheduledNote.trim() : undefined
     });
 
     setStatusModalOpen(false);
@@ -154,7 +229,71 @@ export default function Leads() {
         </div>
       </div>
 
-      <div className="px-4 md:px-6 mb-5 flex gap-2 items-center">
+      <div className="px-4 md:px-6 mb-5 flex flex-col gap-3">
+        <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center bg-card border border-border p-3 md:p-4 rounded-xl shadow-sm">
+          <div className="flex flex-wrap gap-4 md:gap-6 items-center flex-1">
+            <div className="flex flex-col cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setFilterStatuses(["new"])}>
+              <span className="text-[10px] uppercase text-muted-foreground font-bold tracking-wide">New</span>
+              <span className="text-lg font-bold text-emerald-600 leading-none mt-0.5">{kpiCounts.new}</span>
+            </div>
+            <div className="w-px h-6 bg-border hidden sm:block"></div>
+            <div className="flex flex-col cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setFilterStatuses(["in discussion"])}>
+              <span className="text-[10px] uppercase text-muted-foreground font-bold tracking-wide">In Discussion</span>
+              <span className="text-lg font-bold text-blue-600 leading-none mt-0.5">{kpiCounts.inDiscussion}</span>
+            </div>
+            <div className="w-px h-6 bg-border hidden sm:block"></div>
+            <div className="flex flex-col cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setFilterStatuses(["paused/hold"])}>
+              <span className="text-[10px] uppercase text-muted-foreground font-bold tracking-wide">Paused</span>
+              <span className="text-lg font-bold text-amber-600 leading-none mt-0.5">{kpiCounts.paused}</span>
+            </div>
+            <div className="w-px h-6 bg-border hidden sm:block"></div>
+            <div className="flex flex-col cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setFilterStatuses(["won"])}>
+              <span className="text-[10px] uppercase text-muted-foreground font-bold tracking-wide">Won</span>
+              <span className="text-lg font-bold text-green-600 leading-none mt-0.5">{kpiCounts.won}</span>
+            </div>
+            <div className="w-px h-6 bg-border hidden sm:block"></div>
+            <div className="flex flex-col cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setFilterStatuses(["lost"])}>
+              <span className="text-[10px] uppercase text-muted-foreground font-bold tracking-wide">Lost</span>
+              <span className="text-lg font-bold text-red-600 leading-none mt-0.5">{kpiCounts.lost}</span>
+            </div>
+          </div>
+          
+          <div className="w-full md:w-auto flex flex-wrap items-center gap-2 border-t md:border-t-0 pt-3 md:pt-0 border-border">
+            <Select value={dateFilterType} onValueChange={handleDateFilterChange}>
+              <SelectTrigger className="w-full md:w-[130px] h-8 text-xs bg-background">
+                <SelectValue placeholder="Filter by date" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Time</SelectItem>
+                <SelectItem value="today">Today</SelectItem>
+                <SelectItem value="week">This Week</SelectItem>
+                <SelectItem value="month">This Month</SelectItem>
+                <SelectItem value="year">This Year</SelectItem>
+                <SelectItem value="custom">Custom Date</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {dateFilterType === "custom" && (
+              <div className="flex items-center gap-1.5 w-full md:w-auto mt-2 md:mt-0">
+                <input
+                  type="date"
+                  className="h-8 rounded-md border border-input bg-background px-2 py-1 text-xs w-full md:w-[110px]"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                />
+                <span className="text-muted-foreground text-xs">-</span>
+                <input
+                  type="date"
+                  className="h-8 rounded-md border border-input bg-background px-2 py-1 text-xs w-full md:w-[110px]"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex gap-2 items-center">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
@@ -182,6 +321,7 @@ export default function Leads() {
             Clear
           </Button>
         )}
+      </div>
       </div>
 
       <div className="px-4 md:px-6 pb-8">
@@ -282,6 +422,33 @@ export default function Leads() {
             <DialogTitle>Filter Leads</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="field-label text-xs mb-2 block">Start Date</Label>
+                <Input 
+                  type="date" 
+                  value={startDate}
+                  onChange={(e) => {
+                    setStartDate(e.target.value);
+                    setDateFilterType("custom");
+                  }}
+                  className="h-9 text-sm"
+                />
+              </div>
+              <div>
+                <Label className="field-label text-xs mb-2 block">End Date</Label>
+                <Input 
+                  type="date" 
+                  value={endDate}
+                  onChange={(e) => {
+                    setEndDate(e.target.value);
+                    setDateFilterType("custom");
+                  }}
+                  className="h-9 text-sm"
+                />
+              </div>
+            </div>
+
             <div>
               <Label className="field-label text-xs mb-2 block">Status</Label>
               <div className="grid grid-cols-2 gap-2">
@@ -385,16 +552,29 @@ export default function Leads() {
                     className="w-full px-3 py-2 border border-border rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
                   />
                 </div>
-                {newStatus === "paused/hold" && (
-                  <div>
-                    <Label className="field-label text-xs">Schedule Alert (Optional)</Label>
-                    <Input 
-                      type="datetime-local" 
-                      value={scheduledAlertDate}
-                      onChange={(e) => setScheduledAlertDate(e.target.value)}
-                    />
-                  </div>
-                )}
+              </div>
+            )}
+            
+            {(newStatus === "new" || newStatus === "in discussion" || newStatus === "paused/hold") && (
+              <div className="space-y-4 mt-4">
+                <div>
+                  <Label className="field-label text-xs">Schedule Follow-up Alert (Optional)</Label>
+                  <Input 
+                    type="datetime-local" 
+                    value={scheduledAlertDate}
+                    onChange={(e) => setScheduledAlertDate(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label className="field-label text-xs">Follow-up Note (Optional)</Label>
+                  <textarea
+                    value={scheduledNote}
+                    onChange={(e) => setScheduledNote(e.target.value)}
+                    placeholder="Enter follow-up note..."
+                    rows={2}
+                    className="w-full px-3 py-2 border border-border rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </div>
               </div>
             )}
             

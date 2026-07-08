@@ -10,14 +10,26 @@ interface AppLayoutProps {
   children: ReactNode;
 }
 
+const pathModuleMap: Record<string, string> = {
+  "/": "Dashboard",
+  "/orders": "Orders",
+  "/inventory": "Inventory",
+  "/leads": "Leads",
+  "/masters": "Masters",
+  "/notes": "Notes",
+  "/logs": "Logs",
+};
+
 export default function AppLayout({ children }: AppLayoutProps) {
   const { currentUser, alerts, inventory, products, isOwnerAdmin } = useStore();
+  const location = useLocation();
   
   const unreadAlertsCount = useMemo(() => {
     const hasAccess = (moduleName: string) => {
       if (isOwnerAdmin()) return true;
+      if (currentUser?.designation === "sales" && moduleName === "Orders") return false;
       const access = currentUser?.moduleAccess.find(m => m.moduleName === moduleName);
-      return access?.read === true || access?.write === true;
+      return access?.write === true;
     };
 
     const unreadDbAlerts = alerts.filter(a => {
@@ -42,8 +54,27 @@ export default function AppLayout({ children }: AppLayoutProps) {
     return unreadDbAlerts + lowStockCount;
   }, [alerts, inventory, products, currentUser, isOwnerAdmin]);
 
+  const hasRouteAccess = useMemo(() => {
+    if (!currentUser) return false;
+    if (isOwnerAdmin()) return true;
+    if (location.pathname === "/scan-qr" || location.pathname === "/profile" || location.pathname === "/alerts" || location.pathname === "/login") return true;
+    
+    const matchedPath = Object.keys(pathModuleMap).find(p => 
+      p === "/" ? location.pathname === "/" : location.pathname.startsWith(p)
+    );
+    if (!matchedPath) return true;
+
+    const moduleName = pathModuleMap[matchedPath];
+    const access = currentUser?.moduleAccess.find(m => m.moduleName === moduleName);
+    return access?.read === true;
+  }, [location.pathname, currentUser, isOwnerAdmin]);
+
   if (!currentUser) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (!hasRouteAccess) {
+    return <Navigate to="/" replace />;
   }
 
   return (

@@ -1,7 +1,7 @@
 import { useParams, Link } from "react-router-dom";
 import { useStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Download, Printer, QrCode } from "lucide-react";
+import { ArrowLeft, Download, Printer, QrCode, Edit2 } from "lucide-react";
 import { formatDate } from "date-fns";
 import { QRCodeSVG, QRCodeCanvas } from "qrcode.react";
 import { useRef } from "react";
@@ -64,69 +64,55 @@ export default function OrderDetails() {
           <ArrowLeft className="w-4 h-4" /> Back to Orders
         </Link>
 
-        <div className="flex items-start justify-between mb-6">
+        <div className="flex items-start justify-between mb-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground tracking-tight">Order Details</h1>
             <p className="text-sm text-muted-foreground mt-0.5">
               {order.batchNumber ?? (order.status === "pending" ? "Pending Order" : `Order #${order.id}`)}
             </p>
           </div>
-          <div className="flex gap-2 print:hidden">
-            <Button variant="outline" size="sm" className="gap-2" onClick={() => window.print()}>
-              <Printer className="w-4 h-4" /> Print
-            </Button>
+          <div className="flex items-center gap-3 print:hidden">
+            <StatusBadge status={order.status} />
+            <Link to={`/orders/new/manual?edit=${order.id}`}>
+              <Button variant="outline" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
+                <Edit2 className="w-4 h-4" />
+              </Button>
+            </Link>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* ── Left Column ── */}
-          <div className="lg:col-span-2 space-y-4">
-            {/* Status card */}
-            <div className="card-elevated p-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-muted-foreground mb-2">Status</p>
-                  <StatusBadge status={order.status} />
-                </div>
-                <div className="text-right">
-                  <p className="text-xs text-muted-foreground mb-1">Order Date</p>
-                  <p className="font-semibold text-foreground">{formatDate(new Date(order.date), "dd MMM yyyy")}</p>
+          <div className="lg:col-span-2 space-y-3">
+            {/* Main Order Info */}
+            <div className="card-elevated p-4 md:p-5">
+              <div className="flex items-center justify-between mb-4">
+                <p className="font-bold text-foreground text-lg">{order.supplierName}</p>
+                <div className="bg-secondary/40 text-muted-foreground px-2.5 py-1 rounded-md text-xs font-medium">
+                  {formatDate(new Date(order.date), "dd MMM yyyy")}
                 </div>
               </div>
-            </div>
 
-            {/* Supplier */}
-            <div className="card-elevated p-5">
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Supplier / Customer</h3>
-              <p className="font-bold text-foreground">{order.supplierName}</p>
-            </div>
-
-            {/* Products */}
-            <div className="card-elevated p-5">
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-4">Products</h3>
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {order.products.map(p => (
-                  <div key={p.productId} className="pb-4 border-b border-border/60 last:border-0 last:pb-0">
-                    <p className="font-semibold text-foreground mb-2">{p.productName}</p>
-                    <div className="grid grid-cols-3 gap-4 text-sm">
-                      <div>
-                        <p className="text-xs text-muted-foreground">Quantity</p>
-                        <p className="font-semibold mt-0.5">{p.quantity.toLocaleString()} kg</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Rate/kg</p>
-                        <p className="font-semibold mt-0.5">{currencySymbol}{p.ratePerKg}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Subtotal</p>
-                        <p className="font-semibold mt-0.5">{currencySymbol}{(p.quantity * p.ratePerKg).toLocaleString()}</p>
-                      </div>
+                  <div key={p.productId} className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-lg bg-secondary/10 border border-border/40 gap-3 sm:gap-0">
+                    <div>
+                      <p className="font-semibold text-sm text-foreground">{p.productName}</p>
+                      {p.previousRate && (
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          Prev rate: {currencySymbol}{p.previousRate}/kg
+                        </p>
+                      )}
                     </div>
-                    {p.previousRate && (
-                      <p className="text-xs text-muted-foreground mt-2 bg-secondary/50 rounded-md px-2 py-1">
-                        Previous rate from this supplier: {currencySymbol}{p.previousRate}/kg
-                      </p>
-                    )}
+                    <div className="flex items-center gap-3 text-sm text-muted-foreground shrink-0 bg-background/50 sm:bg-transparent p-2 sm:p-0 rounded-md">
+                      <span className="font-medium">{p.quantity.toLocaleString()} kg</span>
+                      <span className="text-border/80">×</span>
+                      <span className="font-medium">{currencySymbol}{p.ratePerKg}/kg</span>
+                      <span className="text-border/80">=</span>
+                      <span className="font-bold text-foreground">
+                        {currencySymbol}{(p.quantity * p.ratePerKg).toLocaleString()}
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -248,15 +234,11 @@ export default function OrderDetails() {
                   </div>
                 )}
 
-                {/* Actions */}
-                {canWrite && (
+                {canWrite && order.status === "pending" && (
                   <div className="border-t border-border pt-4 space-y-2 print:hidden">
-                    <Button variant="outline" className="w-full">Edit Order</Button>
-                    {order.status === "pending" && (
-                      <Link to="/orders">
-                        <Button className="w-full">Mark in Production</Button>
-                      </Link>
-                    )}
+                    <Link to={`/orders?markInProduction=${order.id}`}>
+                      <Button className="w-full">Mark in Production</Button>
+                    </Link>
                   </div>
                 )}
               </div>
