@@ -183,3 +183,13 @@ export interface DispatchContainerItem {
   containerTypeId: string;
   quantity: number;
 }
+
+// System Logs Types
+export interface SystemLog {
+  id: string;
+  employeeId?: string;
+  employeeName: string;
+  action: string;
+  module: string;
+  createdAt: Date;
+}

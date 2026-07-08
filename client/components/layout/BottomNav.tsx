@@ -9,6 +9,7 @@ import {
   Zap,
   MoreHorizontal,
   QrCode,
+  History,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -27,6 +28,7 @@ const navigationItems = [
   { path: "/masters", label: "Masters", icon: Settings },
   { path: "/notes", label: "Notes", icon: StickyNote },
   { path: "/scan-qr", label: "Scan QR", icon: QrCode },
+  { path: "/logs", label: "Logs", icon: History },
 ];
 
 export default function BottomNav() {

@@ -287,7 +287,7 @@ export default function LeadNew() {
             </div>
 
             <div>
-              <Label className="field-label">Quantity (kg) <span className="text-muted-foreground font-normal">- if order placed</span></Label>
+              <Label className="field-label">Quantity (kg) <span className="text-muted-foreground font-normal">- only for display</span></Label>
               <Input disabled={isViewMode} type="number" min="1" value={quantity} onChange={e => setQuantity(Number(e.target.value) || "")} placeholder="0" />
             </div>
           </div>

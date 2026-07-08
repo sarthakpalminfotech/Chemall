@@ -1,5 +1,6 @@
 import { useStore } from "@/lib/store";
 import { useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { formatDate } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Check, Package, Clock, Factory, AlertTriangle, TrendingUp, Users, Bell } from "lucide-react";
@@ -15,7 +16,14 @@ const alertConfig = {
 };
 
 export default function Alerts() {
-  const { alerts, inventory, products, clearAllAlerts, markAlertRead } = useStore();
+  const { alerts, inventory, products, clearAllAlerts, markAlertRead, currentUser, isOwnerAdmin } = useStore();
+  const navigate = useNavigate();
+
+  const hasAccess = (moduleName: string) => {
+    if (isOwnerAdmin()) return true;
+    const access = currentUser?.moduleAccess.find(m => m.moduleName === moduleName);
+    return access?.read === true || access?.write === true;
+  };
 
   const lowStockAlerts = useMemo(() => {
     return inventory
@@ -37,9 +45,21 @@ export default function Alerts() {
       .filter(Boolean) as any[];
   }, [inventory, products]);
 
-  const sortedAlerts = [...lowStockAlerts, ...alerts].sort(
+  const allAlerts = [...lowStockAlerts, ...alerts].sort(
     (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
   );
+
+  const sortedAlerts = allAlerts.filter(alert => {
+    switch (alert.type) {
+      case "low_stock": return hasAccess("Inventory");
+      case "order_unattended":
+      case "no_dispatch":
+      case "priority_unattended":
+      case "repeat_customer_order": return hasAccess("Orders");
+      case "lead_alert": return hasAccess("Leads");
+      default: return true;
+    }
+  });
 
   return (
     <div className="w-full max-w-3xl mx-auto px-4 md:px-6 pt-6 pb-24 md:pb-8">
@@ -71,10 +91,23 @@ export default function Alerts() {
             return (
               <div
                 key={alert.id}
-                className={`card-elevated p-4 border ${cfg.border} ${!alert.read ? "ring-1 ring-inset ring-primary/20 bg-card" : "bg-secondary/20"}`}
+                className={`card-elevated p-4 border cursor-pointer hover:shadow-md transition-all duration-200 ${cfg.border} ${!alert.read ? "ring-1 ring-inset ring-primary/20 bg-card hover:border-primary/50" : "bg-secondary/20 hover:border-border/80"}`}
                 onClick={() => {
                   if (!alert.read && !alert.id.startsWith("low-stock")) {
                     markAlertRead(alert.id);
+                  }
+                  
+                  if (alert.type === "low_stock") {
+                    navigate("/inventory");
+                  } else if (
+                    alert.type === "order_unattended" || 
+                    alert.type === "no_dispatch" || 
+                    alert.type === "priority_unattended" || 
+                    alert.type === "repeat_customer_order"
+                  ) {
+                    navigate(alert.relatedOrderId ? `/orders/${alert.relatedOrderId}` : "/orders");
+                  } else if (alert.type === "lead_alert") {
+                    navigate(alert.relatedLeadId ? `/leads/${alert.relatedLeadId}` : "/leads");
                   }
                 }}
               >

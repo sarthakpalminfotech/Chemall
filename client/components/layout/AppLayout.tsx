@@ -11,17 +11,36 @@ interface AppLayoutProps {
 }
 
 export default function AppLayout({ children }: AppLayoutProps) {
-  const { currentUser, alerts, inventory, products } = useStore();
+  const { currentUser, alerts, inventory, products, isOwnerAdmin } = useStore();
   
   const unreadAlertsCount = useMemo(() => {
-    const unreadDbAlerts = alerts.filter(a => !a.read).length;
-    const lowStockCount = inventory.filter((item) => {
+    const hasAccess = (moduleName: string) => {
+      if (isOwnerAdmin()) return true;
+      const access = currentUser?.moduleAccess.find(m => m.moduleName === moduleName);
+      return access?.read === true || access?.write === true;
+    };
+
+    const unreadDbAlerts = alerts.filter(a => {
+      if (a.read) return false;
+      switch (a.type) {
+        case "low_stock": return hasAccess("Inventory");
+        case "order_unattended":
+        case "no_dispatch":
+        case "priority_unattended":
+        case "repeat_customer_order": return hasAccess("Orders");
+        case "lead_alert": return hasAccess("Leads");
+        default: return true;
+      }
+    }).length;
+
+    const lowStockCount = hasAccess("Inventory") ? inventory.filter((item) => {
       const product = products.find((p) => p.id === item.productId);
       const threshold = product?.alertThreshold ?? 100;
       return item.quantity < threshold;
-    }).length;
+    }).length : 0;
+    
     return unreadDbAlerts + lowStockCount;
-  }, [alerts, inventory, products]);
+  }, [alerts, inventory, products, currentUser, isOwnerAdmin]);
 
   if (!currentUser) {
     return <Navigate to="/login" replace />;
@@ -43,7 +62,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
             <div className="w-7 h-7 bg-gradient-to-br from-primary to-blue-400 rounded-md flex items-center justify-center">
               <FlaskConical className="w-4 h-4 text-white" />
             </div>
-            <span className="text-sm font-bold text-foreground">ChemPack</span>
+            <span className="text-sm font-bold text-foreground">Chemall Pro</span>
           </div>
 
           {/* Desktop: page title placeholder (pages render their own h1) */}

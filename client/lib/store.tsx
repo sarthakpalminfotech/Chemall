@@ -13,6 +13,7 @@ import {
   SupplierType,
   DispatchContainerItem,
   Lead,
+  SystemLog,
 } from "@/lib/types";
 import { supabase } from "./supabase";
 
@@ -27,6 +28,7 @@ interface AppState {
   notes: Note[];
   alerts: Alert[];
   leads: Lead[];
+  systemLogs: SystemLog[];
   loading: boolean;
   currentUser: Employee | null;
 }
@@ -77,6 +79,7 @@ interface AppActions {
   updateLead: (id: string, updates: Partial<Lead>) => Promise<void>;
 
   // Helpers
+  addLog: (module: string, action: string) => Promise<void>;
   getProductContainerTypes: (productIds: string[]) => Product[];
   getPreviousRate: (supplierId: string, productId: string) => number | null;
   isOwnerAdmin: () => boolean;
@@ -99,6 +102,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [systemLogs, setSystemLogs] = useState<SystemLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<Employee | null>(() => {
     try {
@@ -296,6 +300,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
         })),
       }));
       setOrders(mappedOrders);
+
+      // 10. System Logs
+      const { data: logsData } = await supabase.from("system_logs").select("*").order("created_at", { ascending: false });
+      const mappedSystemLogs: SystemLog[] = (logsData || []).map((l: any) => ({
+        id: l.id,
+        employeeId: l.employee_id || undefined,
+        employeeName: l.employee_name,
+        action: l.action,
+        module: l.module,
+        createdAt: new Date(l.created_at),
+      }));
+      setSystemLogs(mappedSystemLogs);
     } catch (err) {
       console.error("Error loading Supabase data:", err);
     } finally {
@@ -321,6 +337,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     refreshData();
+
+    // Set up real-time subscription for all changes in the public schema
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+        },
+        (payload) => {
+          console.log('Realtime change received:', payload);
+          refreshData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   useEffect(() => {
@@ -412,6 +448,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     await refreshData();
+    await addLog("Products", `Added product ${data.name}`);
     return {
       id: newProd.id,
       name: newProd.name,
@@ -455,6 +492,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     await refreshData();
+    await addLog("Products", `Updated product ${data.name}`);
     return {
       id: updatedProd.id,
       name: updatedProd.name,
@@ -469,9 +507,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteProduct = async (id: string) => {
+    const product = products.find(p => p.id === id);
     const { error } = await supabase.from("products").delete().eq("id", id);
     if (error) throw error;
     await refreshData();
+    if (product) await addLog("Products", `Deleted product ${product.name}`);
   };
 
 
@@ -524,6 +564,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     await refreshData();
+    await addLog("Orders", `Created new order for ${data.supplierName}`);
 
     return {
       ...data,
@@ -543,6 +584,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase.from("orders").update(dbUpdates).eq("id", id);
     if (error) throw error;
     await refreshData();
+    const order = orders.find(o => o.id === id);
+    const orderRef = order?.batchNumber || (order ? `from ${order.supplierName}` : id);
+    await addLog("Orders", `Updated order ${orderRef}${updates.status ? ` to status ${updates.status}` : ''}`);
   };
 
   const markInProduction = async (
@@ -568,6 +612,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
 
     await refreshData();
+    const order = orders.find(o => o.id === orderId);
+    const orderRef = order?.batchNumber || (order ? `from ${order.supplierName}` : orderId);
+    await addLog("Orders", `Moved order ${orderRef} to production`);
     return {
       batchNumber: res.batch_number,
       stockWarnings: res.warnings || [],
@@ -581,6 +628,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .eq("id", orderId);
     if (error) throw error;
     await refreshData();
+    const order = orders.find(o => o.id === orderId);
+    const orderRef = order?.batchNumber || (order ? `from ${order.supplierName}` : orderId);
+    await addLog("Orders", `Assigned priority to order ${orderRef}`);
   };
 
   const markAsDispatched = async (orderId: string) => {
@@ -590,6 +640,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .eq("id", orderId);
     if (error) throw error;
     await refreshData();
+    const order = orders.find(o => o.id === orderId);
+    const orderRef = order?.batchNumber || (order ? `from ${order.supplierName}` : orderId);
+    await addLog("Orders", `Dispatched order ${orderRef}`);
   };
 
   // ── Employees ──────────────────────────────────────────────────────────────
@@ -620,6 +673,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     await refreshData();
+    await addLog("Employees", `Added employee ${data.name}`);
     return {
       ...data,
       id: newEmp.id,
@@ -662,6 +716,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     await refreshData();
+    await addLog("Employees", `Updated employee ${data.name}`);
     return {
       ...data,
       id: updatedEmp.id,
@@ -671,12 +726,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteEmployee = async (id: string) => {
+    const emp = employees.find(e => e.id === id);
     // Note: Since employee permissions reference employee_id with ON DELETE CASCADE (assumed),
     // deleting an employee will delete their permissions. If not cascaded, you must delete permissions first.
     await supabase.from("employee_permissions").delete().eq("employee_id", id);
     const { error } = await supabase.from("employees").delete().eq("id", id);
     if (error) throw error;
     await refreshData();
+    if (emp) await addLog("Employees", `Deleted employee ${emp.name}`);
   };
 
   // ── Suppliers ──────────────────────────────────────────────────────────────
@@ -697,6 +754,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
 
     await refreshData();
+    await addLog("Masters", `Added supplier ${data.name}`);
     return {
       id: newSupp.id,
       name: newSupp.name,
@@ -727,6 +785,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
 
     await refreshData();
+    await addLog("Masters", `Updated supplier ${data.name}`);
     return {
       id: updatedSupp.id,
       name: updatedSupp.name,
@@ -740,9 +799,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteSupplier = async (id: string) => {
+    const supp = suppliers.find(s => s.id === id);
     const { error } = await supabase.from("suppliers").delete().eq("id", id);
     if (error) throw error;
     await refreshData();
+    if (supp) await addLog("Masters", `Deleted supplier ${supp.name}`);
   };
 
   // ── Inventory ──────────────────────────────────────────────────────────────
@@ -784,6 +845,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     await refreshData();
+    await addLog("Inventory", `Added inventory for ${items.length} item(s)`);
   };
 
   const removeInventory = async (productId: string, quantity: number, notes: string) => {
@@ -814,6 +876,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (logErr) throw logErr;
 
     await refreshData();
+    await addLog("Inventory", `Removed ${quantity} of ${product.name}`);
   };
 
   // ── Notes ──────────────────────────────────────────────────────────────────
@@ -905,6 +968,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return currentUser.designation === "owner" || currentUser.designation === "admin";
   };
 
+  const addLog = async (module: string, action: string) => {
+    if (!currentUserRef.current) return;
+    try {
+      await supabase.from("system_logs").insert({
+        employee_id: currentUserRef.current.id,
+        employee_name: currentUserRef.current.name,
+        action,
+        module,
+      });
+      // realtime subscription will refresh logs for everyone
+    } catch (err) {
+      console.error("Failed to add log", err);
+    }
+  };
+
   // ── Leads ──────────────────────────────────────────────────────────────────
   const addLead = async (data: Omit<Lead, "id" | "createdAt" | "updatedAt">) => {
     const newLead: Lead = {
@@ -922,13 +1000,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return updated;
     });
     
+    await addLog("Leads", `Added lead ${data.companyName}`);
+    
     return newLead;
   };
 
   const updateLead = async (id: string, updates: Partial<Lead>) => {
+    let leadName = "";
+    let statusChange = "";
+    
     setLeads(prev => {
       const updated = prev.map(l => {
         if (l.id === id) {
+          leadName = l.companyName;
+          if (updates.status && updates.status !== l.status) {
+            statusChange = ` (status changed to ${updates.status})`;
+          }
           const newStatusUpdatedAt = updates.status && updates.status !== l.status 
             ? new Date() 
             : l.statusUpdatedAt;
@@ -939,6 +1026,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       localStorage.setItem("chemall_leads", JSON.stringify(updated));
       return updated;
     });
+    
+    if (leadName) {
+      await addLog("Leads", `Updated lead ${leadName}${statusChange}`);
+    }
   };
 
   const login = async (phone: string, pass: string) => {
@@ -974,6 +1065,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     notes,
     alerts,
     leads,
+    systemLogs,
     loading,
     addProduct,
     updateProduct,
@@ -998,6 +1090,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     clearAllAlerts,
     addLead,
     updateLead,
+    addLog,
     getProductContainerTypes,
     getPreviousRate,
     isOwnerAdmin,

@@ -114,9 +114,9 @@ export default function Dashboard() {
     const inProduction = orders.filter((o) => o.status === "in_production" && isWithinDateRange(o.date)).length;
 
     // Dispatch for selected period
-    const dispatchQty = inventoryLogs
-      .filter((l) => l.type === "OUT" && isWithinDateRange(l.date))
-      .reduce((sum, l) => sum + l.quantity, 0);
+    const dispatchQty = orders
+      .filter((o) => o.status === "dispatched" && isWithinDateRange(o.updatedAt))
+      .reduce((sum, o) => sum + o.products.reduce((pSum, p) => pSum + p.quantity, 0), 0);
 
     // New customers
     const newCustomers = suppliers.filter((s) => s.type === "customer" && isWithinDateRange(s.createdAt)).length;
@@ -125,7 +125,7 @@ export default function Dashboard() {
     const newLeadsCount = leads.filter(l => l.status === "new" && isWithinDateRange(l.createdAt)).length;
 
     return { pendingOrders, inProduction, dispatchQty, newCustomers, newLeadsCount };
-  }, [orders, inventoryLogs, suppliers, leads, isWithinDateRange]);
+  }, [orders, suppliers, leads, isWithinDateRange]);
 
   const isWithinLeadDateRange = useMemo(() => {
     return (dateString: string | Date) => {
@@ -188,7 +188,7 @@ export default function Dashboard() {
 
   // ─── Dispatch Chart Data ─────────────────────────────────────────────────────
   const dispatchData = useMemo(() => {
-    const outLogs = inventoryLogs.filter((l) => l.type === "OUT");
+    const dispatchedOrders = orders.filter((o) => o.status === "dispatched");
 
     if (dispatchView === "weekly") {
       const today = new Date();
@@ -197,16 +197,16 @@ export default function Dashboard() {
         const d = new Date(today);
         d.setDate(d.getDate() - i);
         const dayStr = i === 0 ? "Today" : formatDate(d, "EEE d");
-        const qty = outLogs
-          .filter((l) => {
-            const ld = new Date(l.date);
+        const qty = dispatchedOrders
+          .filter((o) => {
+            const ld = new Date(o.updatedAt);
             return (
               ld.getDate() === d.getDate() &&
               ld.getMonth() === d.getMonth() &&
               ld.getFullYear() === d.getFullYear()
             );
           })
-          .reduce((sum, l) => sum + l.quantity, 0);
+          .reduce((sum, o) => sum + o.products.reduce((pSum, p) => pSum + p.quantity, 0), 0);
         days.push({ label: dayStr, value: qty });
       }
       return days;
@@ -217,17 +217,17 @@ export default function Dashboard() {
       for (let i = 11; i >= 0; i--) {
         const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
         const label = formatDate(d, "MMM");
-        const qty = outLogs
-          .filter((l) => {
-            const ld = new Date(l.date);
+        const qty = dispatchedOrders
+          .filter((o) => {
+            const ld = new Date(o.updatedAt);
             return ld.getMonth() === d.getMonth() && ld.getFullYear() === d.getFullYear();
           })
-          .reduce((sum, l) => sum + l.quantity, 0);
+          .reduce((sum, o) => sum + o.products.reduce((pSum, p) => pSum + p.quantity, 0), 0);
         months.push({ label, value: qty });
       }
       return months;
     }
-  }, [inventoryLogs, dispatchView]);
+  }, [orders, dispatchView]);
 
   // Generate low stock alerts dynamically
   const lowStockAlerts = useMemo(() => {
@@ -572,7 +572,7 @@ export default function Dashboard() {
             )}
 
             <div className="mt-3 pt-3 border-t border-border/60 flex items-center justify-between text-xs text-muted-foreground">
-              <span>Total dispatched qty (kg) from production events</span>
+              <span>Total dispatched qty (kg) from dispatched orders</span>
               <span className="font-medium text-foreground">
                 {dispatchData.reduce((s, d) => s + d.value, 0).toLocaleString()} kg
               </span>

@@ -25,6 +25,7 @@ import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
 import Profile from "./pages/Profile";
 import Alerts from "./pages/Alerts";
+import Logs from "./pages/Logs";
 
 const queryClient = new QueryClient();
 
@@ -58,6 +59,7 @@ const App = () => (
                     <Route path="/leads/:id" element={<LeadNew />} />
                     <Route path="/profile" element={<Profile />} />
                     <Route path="/alerts" element={<Alerts />} />
+                    <Route path="/logs" element={<Logs />} />
                     {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                     <Route path="*" element={<NotFound />} />
                   </Routes>

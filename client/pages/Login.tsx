@@ -60,7 +60,7 @@ const Login = () => {
             <FlaskConical className="w-8 h-8 text-white" />
           </div>
           <div className="space-y-2">
-            <CardTitle className="text-3xl font-bold tracking-tight">ChemPack</CardTitle>
+            <CardTitle className="text-3xl font-bold tracking-tight">Chemall Pro</CardTitle>
             <CardDescription className="text-base">
               Enter your mobile number and password to sign in.
             </CardDescription>

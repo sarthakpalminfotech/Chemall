@@ -26,7 +26,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
-const MODULES = ["Dashboard", "Orders", "Inventory", "Masters", "Notes", "Leads"];
+const MODULES = ["Dashboard", "Orders", "Inventory", "Masters", "Notes", "Leads", "Logs"];
 
 const SUPPLIER_TYPE_MAP: Record<string, string> = {
   customer: "Customer",

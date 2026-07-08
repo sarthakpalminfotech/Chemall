@@ -56,7 +56,7 @@ export default function Profile() {
         <div className="space-y-3">
           <div>
             <p className="text-sm font-medium text-foreground">Company Name</p>
-            <p className="text-sm text-muted-foreground mt-0.5">ChemPack Industries</p>
+            <p className="text-sm text-muted-foreground mt-0.5">Chemall International</p>
           </div>
           <div>
             <p className="text-sm font-medium text-foreground">Role / Access</p>

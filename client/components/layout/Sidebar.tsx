@@ -9,6 +9,7 @@ import {
   Zap,
   FlaskConical,
   QrCode,
+  History,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +21,7 @@ const navigationItems = [
   { path: "/masters", label: "Masters", icon: Settings },
   { path: "/notes", label: "Notes", icon: StickyNote },
   { path: "/scan-qr", label: "Scan QR", icon: QrCode },
+  { path: "/logs", label: "Logs", icon: History },
 ];
 
 export default function Sidebar() {
@@ -50,7 +52,7 @@ export default function Sidebar() {
             <FlaskConical className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h2 className="text-sm font-bold text-white leading-none">ChemPack</h2>
+            <h2 className="text-sm font-bold text-white leading-none">Chemall Pro</h2>
             <p className="text-[11px] text-sidebar-foreground mt-0.5 leading-none">Operations Hub</p>
           </div>
         </div>

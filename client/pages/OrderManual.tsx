@@ -216,14 +216,19 @@ export default function OrderManual() {
     <div className="w-full">
       <div className="px-4 md:px-6 py-6 max-w-2xl mx-auto">
         {/* Header */}
-        <Link to="/orders/new" className="inline-flex items-center gap-2 text-primary hover:opacity-75 transition-opacity mb-6 text-sm font-medium">
+        <Link to="/orders" className="inline-flex items-center gap-2 text-primary hover:opacity-75 transition-opacity mb-6 text-sm font-medium">
           <ArrowLeft className="w-4 h-4" />
-          Back to Order Type
+          Back
         </Link>
 
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">Manual Add Order</h1>
-          <p className="text-sm text-muted-foreground mt-1">Fill in the details to create a new order</p>
+        <div className="mb-6 flex justify-between items-start">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground tracking-tight">Manual Add Order</h1>
+            <p className="text-sm text-muted-foreground mt-1">Fill in the details to create a new order</p>
+          </div>
+          <Button type="button" variant="outline" size="sm" onClick={() => navigate('/leads?status=new,in discussion,paused/hold')}>
+            Intake from Lead
+          </Button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

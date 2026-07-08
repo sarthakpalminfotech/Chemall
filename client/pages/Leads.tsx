@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,13 +28,15 @@ export default function Leads() {
   const canWrite = isOwnerAdmin() || currentUser?.moduleAccess.find(m => m.moduleName === "Leads")?.write === true;
   const [searchTerm, setSearchTerm] = useState("");
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const initialStatuses = searchParams.get("status")?.split(",").filter(Boolean) as LeadStatus[] || [];
   
   // Filters
   const [filterOpen, setFilterOpen] = useState(false);
   const [filterSource, setFilterSource] = useState<string>("all");
   const [filterIntensity, setFilterIntensity] = useState<string>("all");
   const [filterProduct, setFilterProduct] = useState<string>("all");
-  const [filterStatuses, setFilterStatuses] = useState<LeadStatus[]>([]);
+  const [filterStatuses, setFilterStatuses] = useState<LeadStatus[]>(initialStatuses);
 
   // Status Change Modal
   const [statusModalOpen, setStatusModalOpen] = useState(false);

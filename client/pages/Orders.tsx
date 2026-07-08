@@ -419,7 +419,7 @@ export default function Orders() {
           </div>
           <div className="flex gap-2">
             {canWrite && (
-              <Link to="/orders/new">
+              <Link to="/orders/new/manual">
                 <Button className="gap-2 shadow-sm">
                   <Plus className="w-4 h-4" />
                   Add Order
